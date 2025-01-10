@@ -1,1 +1,3 @@
 # MyGraphicsEngine
+
+## Author : Baptiste Grignon
