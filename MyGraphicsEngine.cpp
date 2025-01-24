@@ -171,12 +171,15 @@ public:
 
         if (intersected_once) {
 
-            Vector intersection_point_espiloned;
+            Vector intersection_point_eps;
             Sphere intersected_sphere{ objects[first_intersection_index] };
             intersected_sphere.intersect(ray, intersection_point, intersection_normal, t);
 
             bool total_reflection{ false };
             double dot_prod{ dot(ray.direction, intersection_normal) };
+
+            if (dot_prod < 0) intersection_point_eps = intersection_point + EPSILON * intersection_normal;
+            else intersection_point_eps = intersection_point - EPSILON * intersection_normal;
 
             if (nb_rebound <= 0) return Vector(1000000000, 0, 0); // trop de reflexions => on renvoie du noir)
             else if (intersected_sphere.isTransparent) {
@@ -187,22 +190,21 @@ public:
                 double sign_normal;
                 Vector new_direction_normal;
                 Vector new_direction;
-
-                
+                Vector intersection_point_eps_t;
 
                 if (dot_prod < 0) { // le rayon entre dans la sphère
 
                     refraction_index_ratio = refraction_index_void / intersected_sphere.refraction_index;
                     normal_comp_squared = 1 - refraction_index_ratio * refraction_index_ratio * (1 - dot_prod * dot_prod);
                     sign_normal = -1;
-                    intersection_point_espiloned = intersection_point - EPSILON * intersection_normal;
+                    intersection_point_eps_t = intersection_point - EPSILON * intersection_normal;
                 }
                 else { // le rayon sort dans la sphère
                     
                     refraction_index_ratio = intersected_sphere.refraction_index / refraction_index_void;
                     normal_comp_squared = 1 - refraction_index_ratio * refraction_index_ratio * (1 - dot_prod * dot_prod);
                     sign_normal = 1;
-                    intersection_point_espiloned = intersection_point + EPSILON * intersection_normal;
+                    intersection_point_eps_t = intersection_point + EPSILON * intersection_normal;
                 }
 
                 if (normal_comp_squared < 0) total_reflection = true;
@@ -211,18 +213,15 @@ public:
                     new_direction_normal = sign_normal*sqrt(normal_comp_squared) * intersection_normal;
                     new_direction = new_direction_normal + new_direction_tangential;
                     
-                    Ray refracted_ray(intersection_point_espiloned, new_direction);
+                    Ray refracted_ray(intersection_point_eps_t, new_direction);
                     return getColorIntensities(refracted_ray, light_source, nb_rebound - 1);
                 }
             }
 
-            if (dot_prod < 0) intersection_point_espiloned = intersection_point + EPSILON * intersection_normal;
-            else intersection_point_espiloned = intersection_point - EPSILON * intersection_normal;
-
             if (intersected_sphere.isMirror || total_reflection) {
 
                 Vector reflection_direction = ray.direction - 2 * dot_prod * intersection_normal;
-                Ray mirror_ray(intersection_point_espiloned, reflection_direction);
+                Ray mirror_ray(intersection_point_eps, reflection_direction);
 
                 return this->getColorIntensities(mirror_ray, light_source, nb_rebound - 1);
             }
@@ -230,9 +229,9 @@ public:
             // Lancer de rayon pour déterminer si le point d'intersection est à l'ombre de la source de lumière ou non
             double light_visibility{ 1 };
             int first_shadow_intersection_index{ 0 };
-            Vector shadow_direction{ light_source.position - intersection_point_espiloned };
+            Vector shadow_direction{ light_source.position - intersection_point_eps };
             shadow_direction.normalize();
-            Ray shadow_ray(intersection_point_espiloned, shadow_direction);
+            Ray shadow_ray(intersection_point_eps, shadow_direction);
             Vector shadow_intersection_point, shadow_intersection_normal;
 
             // Reset des variables réutilisables pour le 2ème lancer de rayon :
@@ -252,9 +251,9 @@ public:
                 if (shadow_ray_intersected) intersected_once = true;
             }
 
-            if (intersected_once && smallest_t <= sqrt((light_source.position - intersection_point_espiloned).norm2())) light_visibility = 0; // si intersection avant la source de lumière, pas de visibilité sur celle-ci
+            if (intersected_once && smallest_t <= sqrt((light_source.position - intersection_point_eps).norm2())) light_visibility = 0; // si intersection avant la source de lumière, pas de visibilité sur celle-ci
 
-            double common_factor = light_visibility * dot(intersection_normal, (light_source.position - intersection_point_espiloned)) / (4 * sqr(M_PI) * (light_source.position - intersection_point_espiloned).norm2());
+            double common_factor = light_visibility * dot(intersection_normal, (light_source.position - intersection_point_eps)) / (4 * sqr(M_PI) * (light_source.position - intersection_point_eps).norm2());
             Vector colorIntensities;
             colorIntensities[0] = light_source.intensity[0] * objects[first_intersection_index].albedo[0] * common_factor;
             colorIntensities[1] = light_source.intensity[1] * objects[first_intersection_index].albedo[1] * common_factor;
