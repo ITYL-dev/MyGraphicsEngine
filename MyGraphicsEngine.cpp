@@ -209,12 +209,18 @@ public:
 
                 if (normal_comp_squared < 0) total_reflection = true;
                 else {
+                    // Réfraction
                     new_direction_tangential = refraction_index_ratio * (ray.direction - dot_prod * intersection_normal);
                     new_direction_normal = sign_normal*sqrt(normal_comp_squared) * intersection_normal;
                     new_direction = new_direction_normal + new_direction_tangential;
-                    
                     Ray refracted_ray(intersection_point_eps_t, new_direction);
-                    return getColorIntensities(refracted_ray, light_source, nb_rebound - 1);
+                    Vector color_refraction{ getColorIntensities(refracted_ray, light_source, nb_rebound - 1) };
+
+                    // Réflexion
+                    Vector reflection_direction = ray.direction - 2 * dot_prod * intersection_normal;
+                    Ray mirror_ray(intersection_point_eps, reflection_direction);
+                    Vector color_reflection{ getColorIntensities(mirror_ray, light_source, nb_rebound - 1) };
+                    return color_refraction;
                 }
             }
 
