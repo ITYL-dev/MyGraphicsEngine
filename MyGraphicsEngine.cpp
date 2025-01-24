@@ -16,7 +16,7 @@
 #define GAMMA 2.2
 #define EPSILON 1e-6
 #define MAX_RECURSION_DEPTH 15
-#define NB_RAY 150
+#define NB_RAY 1500
 
 #ifdef _OPENMP
     #include <omp.h>
@@ -333,7 +333,10 @@ int main() {
     int counter{ 0 };
 
 #ifdef _OPENMP
-    std::cout << "OpenMP is active. Parallelism on " << num_cores << " threads" << std::endl;
+    std::cout << "OpenMP is used. Parallelism on " << num_cores << " threads" << std::endl;
+#endif
+#ifndef _OPENMP
+    std::cout << "OpenMP is not used. Parallelism is disabled" << std::endl;
 #endif
 
 #pragma omp parallel for num_threads(num_cores)
@@ -341,7 +344,7 @@ int main() {
         for (int j{ 0 }; j < W; j++) {
             
             counter += 1;
-            if ((counter % 50000) == 0) std::cout << (100.0 * counter) / (W * H) << "%" << std::endl;
+            if ((counter % (W * H / 10)) == 0) std::cout << (100.0 * counter) / (W * H) << "%" << std::endl;
 
             Vector u(j - W / 2, H / 2 - i, - W / (2 * tan(alpha/2)));
             u.normalize();
