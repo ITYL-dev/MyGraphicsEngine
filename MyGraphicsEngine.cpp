@@ -1,11 +1,13 @@
 #define _CRT_SECURE_NO_WARNINGS 1
 #include <vector>
-
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
-
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+#include <iostream>
+#include <limits>
+#include <random>
 
 #define WIDTH 1024
 #define HEIGHT 1024
@@ -14,14 +16,17 @@
 #define GAMMA 2.2
 #define EPSILON 1e-6
 #define MAX_RECURSION_DEPTH 15
-#define NB_RAY 1500
+#define NB_RAY 150
 
-#include <omp.h>
-#include <iostream>
-#include <limits>
-#include <random>
-static const int num_cores = omp_get_num_procs();
-static std::default_random_engine engine(10);
+#ifdef _OPENMP
+    #include <omp.h>
+    static const int num_cores{ omp_get_num_procs() };
+#endif
+#ifndef _OPENMP
+    static const int num_cores{ 1 };
+#endif
+
+static std::vector<std::default_random_engine> engines(num_cores);
 static std::uniform_real_distribution<double> uniform(0, 1);
 
 static inline double sqr(double x) { return x * x; }
@@ -223,7 +228,14 @@ public:
 
                 if (normal_comp_squared < 0) total_reflection = true;
                 else {
-                    if (uniform(engine) < R) {
+                    #ifdef _OPENMP
+                        int thread_id{ omp_get_thread_num() };
+                    #endif
+                    #ifndef _OPENMP
+                        int thread_id{ 0 };
+                    #endif
+                    
+                    if (uniform(engines[thread_id]) < R) {
                         // Réflexion
                         Vector reflection_direction = ray.direction - 2 * dot_prod * intersection_normal;
                         Ray mirror_ray(intersection_point_eps, reflection_direction);
@@ -328,7 +340,6 @@ int main() {
     for (int i{ 0 }; i < H; i++) {
         for (int j{ 0 }; j < W; j++) {
             
-            int thread_id = omp_get_thread_num();
             counter += 1;
             if ((counter % 50000) == 0) std::cout << (100.0 * counter) / (W * H) << "%" << std::endl;
 
