@@ -40,7 +40,7 @@ static unsigned char color_correction(double num) {
     else return static_cast<unsigned char>(num); // conversion
 };
 
-static void boxMuller(double& dx, double& dy, double stdev=DEFAULT_STD_ANTIALIASING) {
+static void boxMuller(double& dx, double& dy, double stdev = DEFAULT_STD_ANTIALIASING) {
     #ifdef _OPENMP
         int thread_id{ omp_get_thread_num() };
     #endif
@@ -96,6 +96,10 @@ static Vector operator*(const Vector& a, double b) {
 }
 static Vector operator*(double a, const Vector& b) {
     return Vector(a*b[0], a*b[1], a*b[2]);
+}
+
+static Vector operator*(const Vector& a, const Vector& b) {
+    return Vector(a[0] * b[0], a[1] * b[1], a[2] * b[2]);
 }
 
 static Vector operator/(const Vector& a, double b) {
@@ -165,12 +169,7 @@ public:
 class LightSource {
 public:
 
-    LightSource(const Vector& position, const Vector relative_intensity=Vector(1,1,1)): position(position) {
-        
-        intensity[0] = MAX_LIGHT_INTENSITY * relative_intensity[0];
-        intensity[1] = MAX_LIGHT_INTENSITY * relative_intensity[1];
-        intensity[2] = MAX_LIGHT_INTENSITY * relative_intensity[2];
-    };
+    LightSource(const Vector& position, const Vector& relative_intensity = Vector(1,1,1)): position(position), intensity(MAX_LIGHT_INTENSITY * relative_intensity) {};
 
     Vector position, intensity;
 };
@@ -182,7 +181,11 @@ public:
         objects.push_back(sphere);
     };
 
-    Vector getColorIntensities(const Ray& ray, const LightSource& light_source, int nb_rebound=DEFAULT_MAX_RECURSION_DEPTH) {
+    void addLight(const LightSource& light_source) {
+        light_sources.push_back(light_source);
+    };
+
+    Vector getColor(const Ray& ray, int nb_rebound = DEFAULT_MAX_RECURSION_DEPTH) {
 
         int first_intersection_index{ 0 };
         double smallest_t{ std::numeric_limits<double>::max() };
@@ -258,8 +261,7 @@ public:
                         // Réflexion
                         Vector reflection_direction = ray.direction - 2 * dot_prod * intersection_normal;
                         Ray mirror_ray(intersection_point_eps, reflection_direction);
-                        Vector color_reflection{ getColorIntensities(mirror_ray, light_source, nb_rebound - 1) };
-                        return color_reflection;
+                        return getColor(mirror_ray, nb_rebound - 1);
                     }
                     else {
                         // Réfraction 
@@ -267,11 +269,8 @@ public:
                         new_direction_normal = sign_normal * sqrt(normal_comp_squared) * intersection_normal;
                         new_direction = new_direction_normal + new_direction_tangential;
                         Ray refracted_ray(intersection_point_eps_t, new_direction);
-                        Vector color_refraction{ getColorIntensities(refracted_ray, light_source, nb_rebound - 1) };
-                        return color_refraction;
+                        return getColor(refracted_ray, nb_rebound - 1);
                     }
-
-                    // return R * color_reflection + T * color_refraction;
                 }
             }
 
@@ -280,49 +279,54 @@ public:
                 Vector reflection_direction = ray.direction - 2 * dot_prod * intersection_normal;
                 Ray mirror_ray(intersection_point_eps, reflection_direction);
 
-                return getColorIntensities(mirror_ray, light_source, nb_rebound - 1);
+                return getColor(mirror_ray, nb_rebound - 1);
             }
 
-            // Lancer de rayon pour déterminer si le point d'intersection est à l'ombre de la source de lumière ou non
-            double light_visibility{ 1 };
-            int first_shadow_intersection_index{ 0 };
-            Vector shadow_direction{ light_source.position - intersection_point_eps };
-            shadow_direction.normalize();
-            Ray shadow_ray(intersection_point_eps, shadow_direction);
-            Vector shadow_intersection_point, shadow_intersection_normal;
+            Vector color(0, 0, 0);
 
-            // Reset des variables réutilisables pour le 2ème lancer de rayon :
-            smallest_t = std::numeric_limits<double>::max();
-            t = std::numeric_limits<double>::max();
-            intersected_once = false;
-            
-            for (int i{ 0 }; i < objects.size(); i++) {
+            for (int l{ 0 }; l < light_sources.size(); l++) {
 
-                bool shadow_ray_intersected{ objects[i].intersect(shadow_ray, shadow_intersection_point, shadow_intersection_normal, t) };
+                // Lancer de rayon pour déterminer si le point d'intersection est à l'ombre de la source de lumière ou non
+                double light_visibility{ 1 };
+                int first_shadow_intersection_index{ 0 };
+                Vector shadow_direction{ light_sources[l].position - intersection_point_eps};
+                shadow_direction.normalize();
+                Ray shadow_ray(intersection_point_eps, shadow_direction);
+                Vector shadow_intersection_point, shadow_intersection_normal;
 
-                if (t < smallest_t) {
-                    smallest_t = t;
-                    first_shadow_intersection_index = i;
+                // Reset des variables réutilisables pour le 2ème lancer de rayon :
+                smallest_t = std::numeric_limits<double>::max();
+                t = std::numeric_limits<double>::max();
+                intersected_once = false;
+
+                for (int i{ 0 }; i < objects.size(); i++) {
+
+                    bool shadow_ray_intersected{ objects[i].intersect(shadow_ray, shadow_intersection_point, shadow_intersection_normal, t) };
+
+                    if (t < smallest_t) {
+                        smallest_t = t;
+                        first_shadow_intersection_index = i;
+                    }
+
+                    if (shadow_ray_intersected) intersected_once = true;
                 }
 
-                if (shadow_ray_intersected) intersected_once = true;
+                if (intersected_once && smallest_t <= sqrt((light_sources[l].position - intersection_point_eps).norm2())) light_visibility = 0; // si intersection avant la source de lumière, pas de visibilité sur celle-ci
+
+                double common_factor = light_visibility * dot(intersection_normal, (light_sources[l].position - intersection_point_eps)) / (4 * sqr(M_PI) * (light_sources[l].position - intersection_point_eps).norm2());
+                color += light_sources[l].intensity * objects[first_intersection_index].albedo * common_factor;
             }
 
-            if (intersected_once && smallest_t <= sqrt((light_source.position - intersection_point_eps).norm2())) light_visibility = 0; // si intersection avant la source de lumière, pas de visibilité sur celle-ci
-
-            double common_factor = light_visibility * dot(intersection_normal, (light_source.position - intersection_point_eps)) / (4 * sqr(M_PI) * (light_source.position - intersection_point_eps).norm2());
-            Vector colorIntensities;
-            colorIntensities[0] = light_source.intensity[0] * objects[first_intersection_index].albedo[0] * common_factor;
-            colorIntensities[1] = light_source.intensity[1] * objects[first_intersection_index].albedo[1] * common_factor;
-            colorIntensities[2] = light_source.intensity[2] * objects[first_intersection_index].albedo[2] * common_factor;
-            return colorIntensities;
+            return color;
         }
+
         else return Vector(0, 0, 0); // couleur par défaut si pas d'intersection ciel ("sky") noir
 
     };
 
     double refraction_index_void{ 1.0 };
     std::vector<Sphere> objects;
+    std::vector<LightSource> light_sources;
 };
 
 int main() {
@@ -336,12 +340,14 @@ int main() {
     int big_radius{ 100000 };
 
     Vector origin_camera(0, 0, 55);
-    LightSource light_source(Vector(-10, 20, 40));
     Scene scene;
+    scene.addLight(LightSource(Vector(-10, 20, 40)));
+    scene.addLight(LightSource(Vector(30, 20, 40), Vector(0.5, 0, 0)));
     scene.addSphere(Sphere(Vector(0, 0, 0), sphere_radius, Vector(1, 1, 1), false, true, 1.3));
     scene.addSphere(Sphere(Vector(15, 15, 0), sphere_radius/1.5, Vector(1, 1, 1), true));
+    scene.addSphere(Sphere(Vector(-15, 15, 0), sphere_radius / 1.5, Vector(1, 1, 1), true));
     scene.addSphere(Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(55.0 / 255.0, 215.0 / 255.0, 0.0 / 255.0)));
-    scene.addSphere(Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0), true));
+    scene.addSphere(Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(238.0 / 255.0, 29.0 / 255.0, 35.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.0 / 255.0, 44.0 / 255.0, 89.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(13.0 / 255.0, 87.0 / 255.0, 38.0 / 255.0)));
@@ -365,19 +371,22 @@ int main() {
             counter += 1;
             if ((counter % (W * H / 10)) == 0) std::cout << 1 + (100 * counter) / (W * H) << "%" << std::endl;
 
-            Vector colorIntensities(0, 0, 0);
+            Vector color(0, 0, 0);
+
             for (int k{ 0 }; k < NB_RAY; k++) {
+
                 double dx, dy;
                 boxMuller(dx, dy);
                 Vector direction((j + 0.5 + dx) - (W / 2), (H / 2) - (i + 0.5 + dy), -W / (2 * tan(alpha / 2)));
                 direction.normalize();
                 Ray ray(origin_camera, direction);
-                colorIntensities += scene.getColorIntensities(ray, light_source) / NB_RAY;
+
+                color += (scene.getColor(ray) / NB_RAY);
             }
 
-            image[(i*W + j) * 3 + 0] = color_correction(colorIntensities[0]); // RED
-            image[(i*W + j) * 3 + 1] = color_correction(colorIntensities[1]); // GREEN
-            image[(i*W + j) * 3 + 2] = color_correction(colorIntensities[2]); // BLUE
+            image[(i*W + j) * 3 + 0] = color_correction(color[0]); // RED
+            image[(i*W + j) * 3 + 1] = color_correction(color[1]); // GREEN
+            image[(i*W + j) * 3 + 2] = color_correction(color[2]); // BLUE
         }
     }
 
