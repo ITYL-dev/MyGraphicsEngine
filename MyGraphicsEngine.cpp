@@ -15,8 +15,9 @@
 #define MAX_LIGHT_INTENSITY 5e8
 #define GAMMA 2.2
 #define EPSILON 1e-6
-#define MAX_RECURSION_DEPTH 15
-#define NB_RAY 1500
+#define DEFAULT_MAX_RECURSION_DEPTH 16
+#define NB_RAY 1024
+#define DEFAULT_STD_ANTIALIASING 0.6
 
 #ifdef _OPENMP
     #include <omp.h>
@@ -38,6 +39,20 @@ static unsigned char color_correction(double num) {
     else if (num < 0) return 0; // clamping clamping inférieur
     else return static_cast<unsigned char>(num); // conversion
 };
+
+static void boxMuller(double& dx, double& dy, double stdev=DEFAULT_STD_ANTIALIASING) {
+    #ifdef _OPENMP
+        int thread_id{ omp_get_thread_num() };
+    #endif
+    #ifndef _OPENMP
+        int thread_id{ 0 };
+    #endif
+    double r1 = uniform(engines[thread_id]);
+    double r2 = uniform(engines[thread_id]);
+    double R = sqrt(-2 * log(r1));
+    dx = R * cos(2 * M_PI * r2) * stdev;
+    dy = R * cos(2 * M_PI * r2) * stdev;
+}
 
 class Vector {
 public:
@@ -81,6 +96,10 @@ static Vector operator*(const Vector& a, double b) {
 }
 static Vector operator*(double a, const Vector& b) {
     return Vector(a*b[0], a*b[1], a*b[2]);
+}
+
+static Vector operator/(const Vector& a, double b) {
+    return Vector(a[0] / b, a[1] / b, a[2] / b);
 }
 
 static double dot(const Vector& a, const Vector& b) {
@@ -163,7 +182,7 @@ public:
         objects.push_back(sphere);
     };
 
-    Vector getColorIntensities(const Ray& ray, const LightSource& light_source, int nb_rebound=MAX_RECURSION_DEPTH) {
+    Vector getColorIntensities(const Ray& ray, const LightSource& light_source, int nb_rebound=DEFAULT_MAX_RECURSION_DEPTH) {
 
         int first_intersection_index{ 0 };
         double smallest_t{ std::numeric_limits<double>::max() };
@@ -344,18 +363,21 @@ int main() {
         for (int j{ 0 }; j < W; j++) {
             
             counter += 1;
-            if ((counter % (W * H / 10)) == 0) std::cout << (100.0 * counter) / (W * H) << "%" << std::endl;
+            if ((counter % (W * H / 10)) == 0) std::cout << 1 + (100 * counter) / (W * H) << "%" << std::endl;
 
-            Vector u(j - W / 2, H / 2 - i, - W / (2 * tan(alpha/2)));
-            u.normalize();
-            Ray ray(origin_camera, u);
+            Vector colorIntensities(0, 0, 0);
+            for (int k{ 0 }; k < NB_RAY; k++) {
+                double dx, dy;
+                boxMuller(dx, dy);
+                Vector direction((j + 0.5 + dx) - (W / 2), (H / 2) - (i + 0.5 + dy), -W / (2 * tan(alpha / 2)));
+                direction.normalize();
+                Ray ray(origin_camera, direction);
+                colorIntensities += scene.getColorIntensities(ray, light_source) / NB_RAY;
+            }
 
-            Vector colorIntensities(0,0,0);
-            for (int k{ 0 }; k < NB_RAY; k++) colorIntensities += scene.getColorIntensities(ray, light_source);
-
-            image[(i*W + j) * 3 + 0] = color_correction(colorIntensities[0]/NB_RAY); // RED
-            image[(i*W + j) * 3 + 1] = color_correction(colorIntensities[1]/NB_RAY); // GREEN
-            image[(i*W + j) * 3 + 2] = color_correction(colorIntensities[2]/NB_RAY); // BLUE
+            image[(i*W + j) * 3 + 0] = color_correction(colorIntensities[0]); // RED
+            image[(i*W + j) * 3 + 1] = color_correction(colorIntensities[1]); // GREEN
+            image[(i*W + j) * 3 + 2] = color_correction(colorIntensities[2]); // BLUE
         }
     }
 
