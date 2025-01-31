@@ -9,21 +9,20 @@
 #include <limits>
 #include <random>
 
-#define WIDTH 1024
-#define HEIGHT 1024
+#define WIDTH 512
+#define HEIGHT 512
 #define M_PI 3.14159265358
-#define MAX_LIGHT_INTENSITY 5e8
+#define MAX_LIGHT_INTENSITY 2e10
 #define GAMMA 2.2
 #define EPSILON 1e-6
-#define DEFAULT_MAX_RECURSION_DEPTH 16
-#define NB_RAY 1024
+#define DEFAULT_MAX_RECURSION_DEPTH 8
+#define NB_RAY 64
 #define DEFAULT_STD_ANTIALIASING 0.6
 
 #ifdef _OPENMP
     #include <omp.h>
     static const int num_cores{ omp_get_num_procs() };
-#endif
-#ifndef _OPENMP
+#else
     static const int num_cores{ 1 };
 #endif
 
@@ -43,8 +42,7 @@ static unsigned char color_correction(double num) {
 static void boxMuller(double& dx, double& dy, double stdev = DEFAULT_STD_ANTIALIASING) {
     #ifdef _OPENMP
         int thread_id{ omp_get_thread_num() };
-    #endif
-    #ifndef _OPENMP
+    #else
         int thread_id{ 0 };
     #endif
     double r1 = uniform(engines[thread_id]);
@@ -76,7 +74,7 @@ public:
     }
 
     void normalize() {
-        double norm{ sqrt(this->norm2()) };
+        double norm{ sqrt(norm2()) };
         coord[0] /= norm;
         coord[1] /= norm;
         coord[2] /= norm;
@@ -110,6 +108,46 @@ static double dot(const Vector& a, const Vector& b) {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
+static Vector cross(const Vector& a, const Vector& b) {
+    return Vector(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b [0]);
+}
+
+static Vector random_cos(const Vector& N) {
+
+    #ifdef _OPENMP
+        int thread_id{ omp_get_thread_num() };
+    #else
+        int thread_id{ 0 };
+    #endif
+
+    double r1{ uniform(engines[thread_id]) };
+    double r2{ uniform(engines[thread_id]) };
+
+    double x{ cos(2 * M_PI * r1) / sqrt(1 - r2) };
+    double y{ cos(2 * M_PI * r2) / sqrt(1 - r1) };
+    double z{ sqrt(r2) };
+
+    Vector T(0, 0, 0);
+    if (abs(N[0]) < abs(N[1]) && abs(N[0]) < abs(N[2])) {
+        T[1] = -N[2];
+        T[2] = N[1];
+
+    }
+    else if (abs(N[1]) < abs(N[0]) && abs(N[1]) < abs(N[2])) {
+        T[0] = -N[2];
+        T[2] = N[0];
+    }
+    else {
+        T[0] = -N[1];
+        T[1] = N[0];
+    }
+    T.normalize();
+
+    Vector T2{ cross(T, N) };
+
+    return x * T + y * T2 + z * N;
+}
+
 class Ray {
 public:
     
@@ -124,11 +162,12 @@ public:
     Sphere(
         const Vector& center,
         double radius,
-        const Vector& albedo=Vector(1,1,1),
-        bool isMirror=false,
-        bool isTransparent=false,
-        double refraction_index=1.0) :
-        center(center), radius(radius), albedo(albedo), isMirror(isMirror), isTransparent(isTransparent), refraction_index(refraction_index) { };
+        const Vector& albedo = Vector(1,1,1),
+        bool is_diffuse = true,
+        bool isMirror = false,
+        bool isTransparent = false,
+        double refraction_index = 1.0) :
+        center(center), radius(radius), albedo(albedo), is_diffuse(is_diffuse), isMirror(isMirror), isTransparent(isTransparent), refraction_index(refraction_index) { };
 
     bool intersect(const Ray& ray, Vector& intersection_point, Vector& intersection_normal, double& t) {
         double a{ 1 };
@@ -161,6 +200,7 @@ public:
     Vector center;
     Vector albedo;
     double radius;
+    bool is_diffuse;
     bool isMirror;
     bool isTransparent;
     double refraction_index;
@@ -218,7 +258,8 @@ public:
             else intersection_point_eps = intersection_point - EPSILON * intersection_normal;
 
             if (nb_rebound <= 0) return Vector(0, 0, 0); // trop de reflexions => on renvoie du noir
-            else if (intersected_sphere.isTransparent) {
+
+            if (intersected_sphere.isTransparent) {
 
                 double refraction_index_ratio;
                 Vector new_direction_tangential;
@@ -241,7 +282,7 @@ public:
                     intersection_point_eps_t = intersection_point - EPSILON * intersection_normal;
                 }
                 else { // le rayon sort dans la sphère
-                    
+
                     refraction_index_ratio = intersected_sphere.refraction_index / refraction_index_void;
                     normal_comp_squared = 1 - refraction_index_ratio * refraction_index_ratio * (1 - dot_prod * dot_prod);
                     sign_normal = 1;
@@ -252,11 +293,10 @@ public:
                 else {
                     #ifdef _OPENMP
                         int thread_id{ omp_get_thread_num() };
-                    #endif
-                    #ifndef _OPENMP
+                    #else
                         int thread_id{ 0 };
                     #endif
-                    
+
                     if (uniform(engines[thread_id]) < R) {
                         // Réflexion
                         Vector reflection_direction = ray.direction - 2 * dot_prod * intersection_normal;
@@ -282,42 +322,53 @@ public:
                 return getColor(mirror_ray, nb_rebound - 1);
             }
 
-            Vector color(0, 0, 0);
+            if (intersected_sphere.is_diffuse) {
 
-            for (int l{ 0 }; l < light_sources.size(); l++) {
+                Vector color_direct(0, 0, 0);
 
-                // Lancer de rayon pour déterminer si le point d'intersection est à l'ombre de la source de lumière ou non
-                double light_visibility{ 1 };
-                int first_shadow_intersection_index{ 0 };
-                Vector shadow_direction{ light_sources[l].position - intersection_point_eps};
-                shadow_direction.normalize();
-                Ray shadow_ray(intersection_point_eps, shadow_direction);
-                Vector shadow_intersection_point, shadow_intersection_normal;
+                for (int l{ 0 }; l < light_sources.size(); l++) {
 
-                // Reset des variables réutilisables pour le 2ème lancer de rayon :
-                smallest_t = std::numeric_limits<double>::max();
-                t = std::numeric_limits<double>::max();
-                intersected_once = false;
+                    // Lancer de rayon pour déterminer si le point d'intersection est à l'ombre de la source de lumière ou non
+                    double light_visibility{ 1 };
+                    int first_shadow_intersection_index{ 0 };
+                    Vector shadow_direction{ light_sources[l].position - intersection_point_eps };
+                    shadow_direction.normalize();
+                    Ray shadow_ray(intersection_point_eps, shadow_direction);
+                    Vector shadow_intersection_point, shadow_intersection_normal;
 
-                for (int i{ 0 }; i < objects.size(); i++) {
+                    // Reset des variables réutilisables pour le 2ème lancer de rayon :
+                    smallest_t = std::numeric_limits<double>::max();
+                    t = std::numeric_limits<double>::max();
+                    intersected_once = false;
 
-                    bool shadow_ray_intersected{ objects[i].intersect(shadow_ray, shadow_intersection_point, shadow_intersection_normal, t) };
+                    for (int i{ 0 }; i < objects.size(); i++) {
 
-                    if (t < smallest_t) {
-                        smallest_t = t;
-                        first_shadow_intersection_index = i;
+                        bool shadow_ray_intersected{ objects[i].intersect(shadow_ray, shadow_intersection_point, shadow_intersection_normal, t) };
+
+                        if (t < smallest_t) {
+                            smallest_t = t;
+                            first_shadow_intersection_index = i;
+                        }
+
+                        if (shadow_ray_intersected) intersected_once = true;
                     }
 
-                    if (shadow_ray_intersected) intersected_once = true;
+                    if (intersected_once && smallest_t <= sqrt((light_sources[l].position - intersection_point_eps).norm2())) light_visibility = 0; // si intersection avant la source de lumière, pas de visibilité sur celle-ci
+
+                    Vector normalized_dist{ light_sources[l].position - intersection_point_eps };
+                    normalized_dist.normalize();
+
+                    double common_factor = light_visibility * dot(intersection_normal, normalized_dist) / (4 * sqr(M_PI) * (light_sources[l].position - intersection_point_eps).norm2());
+                    color_direct += common_factor * light_sources[l].intensity * intersected_sphere.albedo;
                 }
 
-                if (intersected_once && smallest_t <= sqrt((light_sources[l].position - intersection_point_eps).norm2())) light_visibility = 0; // si intersection avant la source de lumière, pas de visibilité sur celle-ci
+                Vector color_indirect(0, 0, 0);
+                Vector random_direction{ random_cos(intersection_normal) };
+                Ray random_ray(intersection_point_eps, random_direction);
 
-                double common_factor = light_visibility * dot(intersection_normal, (light_sources[l].position - intersection_point_eps)) / (4 * sqr(M_PI) * (light_sources[l].position - intersection_point_eps).norm2());
-                color += light_sources[l].intensity * objects[first_intersection_index].albedo * common_factor;
+                color_indirect = intersected_sphere.albedo * getColor(random_ray, nb_rebound - 1);
+                return color_direct + color_indirect;
             }
-
-            return color;
         }
 
         else return Vector(0, 0, 0); // couleur par défaut si pas d'intersection ciel ("sky") noir
@@ -342,25 +393,25 @@ int main() {
     Vector origin_camera(0, 0, 55);
     Scene scene;
     scene.addLight(LightSource(Vector(-10, 20, 40)));
-    scene.addLight(LightSource(Vector(30, 20, 40), Vector(0.5, 0, 0)));
-    scene.addSphere(Sphere(Vector(0, 0, 0), sphere_radius, Vector(1, 1, 1), false, true, 1.3));
-    scene.addSphere(Sphere(Vector(15, 15, 0), sphere_radius/1.5, Vector(1, 1, 1), true));
-    scene.addSphere(Sphere(Vector(-15, 15, 0), sphere_radius / 1.5, Vector(1, 1, 1), true));
-    scene.addSphere(Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(55.0 / 255.0, 215.0 / 255.0, 0.0 / 255.0)));
-    scene.addSphere(Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0)));
-    scene.addSphere(Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(238.0 / 255.0, 29.0 / 255.0, 35.0 / 255.0)));
-    scene.addSphere(Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.0 / 255.0, 44.0 / 255.0, 89.0 / 255.0)));
-    scene.addSphere(Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(13.0 / 255.0, 87.0 / 255.0, 38.0 / 255.0)));
-    scene.addSphere(Sphere(Vector(0, 0, big_radius), big_radius - offset_to_wall - sphere_radius, Vector(255 / 255.0, 255 / 255.0, 0 / 255.0)));
+    // scene.addLight(LightSource(Vector(30, 20, 40), Vector(0.5, 0, 0)));
+    scene.addSphere(Sphere(Vector(0, 0, 0), sphere_radius, Vector(0.5, 0.2, 0.9)));
+    scene.addSphere(Sphere(Vector(-15, 15, 0), sphere_radius/1.5, Vector(1, 1, 1), false, true));
+    scene.addSphere(Sphere(Vector(15, 15, 0), sphere_radius / 1.5, Vector(1, 1, 1), false, false, true, 1.3));
+    scene.addSphere(Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.8, 0.4, 0.6)));
+    scene.addSphere(Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.2, 0.3, 0.8)));
+    scene.addSphere(Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.6, 0.8, 0.7)));
+    scene.addSphere(Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.4, 0.8, 0.5)));
+    scene.addSphere(Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(0.4, 0.4, 0.9)));
+    scene.addSphere(Sphere(Vector(0, 0, big_radius), big_radius - offset_to_wall - sphere_radius, Vector(0.9, 0.8, 0.5)));
 
     std::vector<unsigned char> image(W*H * 3, 0);
 
     int counter{ 0 };
 
 #ifdef _OPENMP
+    for (int k{ 0 }; k < num_cores; k++) engines[k].seed(k);
     std::cout << "OpenMP is used. Parallelism on " << num_cores << " threads" << std::endl;
-#endif
-#ifndef _OPENMP
+#else
     std::cout << "OpenMP is not used. Parallelism is disabled" << std::endl;
 #endif
 
@@ -374,6 +425,8 @@ int main() {
             Vector color(0, 0, 0);
 
             for (int k{ 0 }; k < NB_RAY; k++) {
+
+                // engines[omp_get_thread_num()].seed(k); // decommentez ça pour des résultats rigolos
 
                 double dx, dy;
                 boxMuller(dx, dy);
