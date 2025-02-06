@@ -49,7 +49,7 @@ static void boxMuller(double& dx, double& dy, double stdev = DEFAULT_STD_ANTIALI
     double r2 = uniform(engines[thread_id]);
     double R = sqrt(-2 * log(r1));
     dx = R * cos(2 * M_PI * r2) * stdev;
-    dy = R * cos(2 * M_PI * r2) * stdev;
+    dy = R * sin(2 * M_PI * r2) * stdev;
 }
 
 class Vector {
@@ -124,7 +124,7 @@ static Vector random_cos(const Vector& N) {
     double r2{ uniform(engines[thread_id]) };
 
     double x{ cos(2 * M_PI * r1) / sqrt(1 - r2) };
-    double y{ cos(2 * M_PI * r2) / sqrt(1 - r1) };
+    double y{ sin(2 * M_PI * r1) / sqrt(1 - r2) };
     double z{ sqrt(r2) };
 
     Vector T(0, 0, 0);
@@ -144,6 +144,7 @@ static Vector random_cos(const Vector& N) {
     T.normalize();
 
     Vector T2{ cross(T, N) };
+    T2.normalize(); // devrait être normalisé, mais pour être sûr
 
     return x * T + y * T2 + z * N;
 }
