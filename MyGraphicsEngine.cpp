@@ -12,11 +12,11 @@
 #define WIDTH 512
 #define HEIGHT 512
 #define M_PI 3.14159265358
-#define MAX_LIGHT_INTENSITY 2e10
+#define MAX_LIGHT_INTENSITY 1e10
 #define GAMMA 2.2
 #define EPSILON 1e-6
 #define DEFAULT_MAX_RECURSION_DEPTH 8
-#define NB_RAY 1024
+#define NB_RAY 1028
 #define DEFAULT_STD_ANTIALIASING 0.6
 
 #ifdef _OPENMP
@@ -223,7 +223,9 @@ public:
         light_sources.push_back(light_source);
     };
 
-    Vector getColor(const Ray& ray, int nb_rebound = DEFAULT_MAX_RECURSION_DEPTH) {
+    Vector getColor(const Ray& ray, int nb_rebound = DEFAULT_MAX_RECURSION_DEPTH, bool is_indirect = false) {
+
+        if (nb_rebound <= 0) return Vector(0, 0, 0); // trop de reflexions => on renvoie du noir
 
         int first_intersection_index{ 0 };
         double smallest_t{ std::numeric_limits<double>::max() };
@@ -247,6 +249,15 @@ public:
 
             Vector intersection_point_eps;
             Sphere intersected_sphere{ objects[first_intersection_index] };
+
+            if (first_intersection_index == 0) {
+
+                if (is_indirect) return Vector(0, 0, 0);
+
+                return MAX_LIGHT_INTENSITY * intersected_sphere.albedo / (4 * sqr(M_PI) * sqr(intersected_sphere.radius));
+            }
+                
+
             intersected_sphere.intersect(ray, intersection_point, intersection_normal, t);
 
             bool total_reflection{ false };
@@ -254,8 +265,6 @@ public:
 
             if (dot_prod < 0) intersection_point_eps = intersection_point + EPSILON * intersection_normal;
             else intersection_point_eps = intersection_point - EPSILON * intersection_normal;
-
-            if (nb_rebound <= 0) return Vector(0, 0, 0); // trop de reflexions => on renvoie du noir
 
             if (intersected_sphere.isTransparent) {
 
@@ -324,6 +333,8 @@ public:
 
             Vector color_direct(0, 0, 0);
 
+            /*
+
             for (int l{ 0 }; l < light_sources.size(); l++) {
 
                 // Lancer de rayon pour déterminer si le point d'intersection est à l'ombre de la source de lumière ou non
@@ -359,17 +370,64 @@ public:
                 double common_factor = light_visibility * dot(intersection_normal, normalized_dist) / (4 * sqr(M_PI) * (light_sources[l].position - intersection_point_eps).norm2());
                 color_direct += common_factor * light_sources[l].intensity * intersected_sphere.albedo;
             }
+            */
 
+            // Choix d'une point X considéré comme source de lumière sur la sphère
+            Sphere light_sphere{ objects[0] };
+            Vector intersection_point_to_light_center{ light_sphere.center - intersection_point }; // PL
+            intersection_point_to_light_center.normalize();
+            Vector light_normal{ random_cos(-1 * intersection_point_to_light_center) };
+            light_normal.normalize();
+            Vector light_source{ light_sphere.center + light_normal * light_sphere.radius }; // X
+            Vector light_source_eps{light_source + EPSILON * light_normal};
+
+
+            // Lancer de rayon pour déterminer si le point d'intersection est à l'ombre de la source de lumière ou non
+            Vector shadow_direction{ light_source_eps - intersection_point_eps };
+            double shadow_dist{ sqrt(shadow_direction.norm2()) };
+            shadow_direction.normalize();
+
+            double light_visibility{ 1 };
+            int first_shadow_intersection_index{ 0 };
+            Ray shadow_ray(intersection_point_eps, shadow_direction);
+            Vector shadow_intersection_point, shadow_intersection_normal;
+
+            // Reset des variables réutilisables pour le 2ème lancer de rayon :
+            smallest_t = std::numeric_limits<double>::max();
+            t = std::numeric_limits<double>::max();
+            intersected_once = false;
+
+            for (int i{ 0 }; i < objects.size(); i++) {
+
+                bool shadow_ray_intersected{ objects[i].intersect(shadow_ray, shadow_intersection_point, shadow_intersection_normal, t) };
+
+                if (t < smallest_t) {
+                    smallest_t = t;
+                    first_shadow_intersection_index = i;
+                }
+
+                if (shadow_ray_intersected) intersected_once = true;
+            }
+
+            if (intersected_once && smallest_t <= shadow_dist) light_visibility = 0; // si intersection avant la source de lumière, pas de visibilité sur celle-ci
+
+            Vector light_intensity{ MAX_LIGHT_INTENSITY * light_sphere.albedo }; // to mimic colored light
+            color_direct = intersected_sphere.albedo * light_intensity / (4 * sqr(M_PI));
+            color_direct = color_direct * dot(shadow_direction, intersection_normal) / dot(-1 * intersection_point_to_light_center, light_normal);
+            color_direct = color_direct * dot(-1 * shadow_direction, light_normal) * light_visibility / sqr(shadow_dist);
+
+
+            // Lumière indirecte
             Vector color_indirect(0, 0, 0);
             Vector random_direction{ random_cos(intersection_normal) };
             Ray random_ray(intersection_point_eps, random_direction);
 
-            color_indirect = intersected_sphere.albedo * getColor(random_ray, nb_rebound - 1);
+            color_indirect = intersected_sphere.albedo * getColor(random_ray, nb_rebound - 1, true);
+
             return color_direct + color_indirect;
         }
 
         else return Vector(0, 0, 0); // couleur par défaut si pas d'intersection ciel ("sky") noir
-
     };
 
     double refraction_index_void{ 1.0 };
@@ -383,29 +441,22 @@ int main() {
     int H{ HEIGHT };
     double alpha{ 60 * M_PI / 180 };
     double focus_distance{ 55 };
-    double aperture_max_size{ 2 };
+    double aperture_radius{ 1.5 };
 
     int sphere_radius{ 10 };
     int offset_to_wall{ 50 };
     int big_radius{ 100000 };
 
-    Vector origin_camera(0, 0, 55);
+    Vector origin_camera(0, 0, focus_distance);
     Scene scene;
 
-    // Lumières
-    scene.addLight(LightSource(Vector(-10, 20, 40)));
-    //scene.addLight(LightSource(Vector(30, 20, 40), Vector(0.5, 0, 0)));
-
-    // Sphère centrale diffus
-    scene.addSphere(Sphere(Vector(0, 0, 0), sphere_radius, Vector(0.5, 0.2, 0.9)));
-
-    // Sphères supplémentaires diffuses
-    scene.addSphere(Sphere(Vector(-15, 15, -15), sphere_radius / 1.5, Vector(0.5, 0.9, 0.2)));// , true));
-    scene.addSphere(Sphere(Vector(15, 15, 15), sphere_radius / 1.5, Vector(0.9, 0.5, 0.2)));// , false, true, 1.3));
-
-    // Sphères supplémentaires : 1 miroir, 1 transparente
-    //scene.addSphere(Sphere(Vector(-15, 15, -15), sphere_radius / 1.5, Vector(0.5, 0.9, 0.2), true));
-    //scene.addSphere(Sphere(Vector(15, 15, 15), sphere_radius / 1.5, Vector(0.9, 0.5, 0.2), false, true, 1.3));
+    scene.addSphere(Sphere(Vector(15, 35, -35), 7.5, Vector(1, 1, 1)));
+    
+    scene.addSphere(Sphere(Vector(-5, 0, 0), sphere_radius, Vector(0.5, 0.2, 0.9)));
+    //scene.addSphere(Sphere(Vector(-10, 0, -10), sphere_radius, Vector(0.5, 0.9, 0.2)));
+    scene.addSphere(Sphere(Vector(-20, 0, -15), sphere_radius, Vector(0.5, 0.9, 0.2), true));
+    //scene.addSphere(Sphere(Vector(10, 0, 10), sphere_radius, Vector(0.9, 0.5, 0.2)));
+    scene.addSphere(Sphere(Vector(10, 0, 15), sphere_radius, Vector(0.9, 0.5, 0.2), false, true, 1.3));
 
     // Couleurs des murs utilisées par le prof
     /*scene.addSphere(Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.8, 0.4, 0.6)));
@@ -455,8 +506,10 @@ int main() {
                     int thread_id{ 0 };
                 #endif
 
-                double dx_aperture{ aperture_max_size * (uniform(engines[thread_id]) - 0.5) };
-                double dy_aperture{ aperture_max_size * (uniform(engines[thread_id]) - 0.5) };
+                double dr_aperture{ aperture_radius * uniform(engines[thread_id]) };
+                double dtheta_aperture{ 2 * M_PI * uniform(engines[thread_id]) };
+                double dx_aperture{ dr_aperture * cos(dtheta_aperture) };
+                double dy_aperture{ dr_aperture * sin(dtheta_aperture) };
                 
                 Vector destination{origin_camera + focus_distance * direction};
                 Vector new_origin_camera{origin_camera + Vector(dx_aperture, dy_aperture, 0)};
