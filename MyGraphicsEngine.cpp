@@ -397,25 +397,25 @@ int main() {
 
     scene.addSphere(Sphere(Vector(0, 0, 0), sphere_radius, Vector(0.5, 0.2, 0.9)));
 
-    scene.addSphere(Sphere(Vector(-15, 15, -15), sphere_radius / 1.5, Vector(0.5, 0.9, 0.2)));// , true));
-    scene.addSphere(Sphere(Vector(15, 15, 15), sphere_radius / 1.5, Vector(0.9, 0.5, 0.2)));// , false, true, 1.3));
-    //scene.addSphere(Sphere(Vector(-15, 15, -15), sphere_radius / 1.5, Vector(0.5, 0.9, 0.2), true));
-    //scene.addSphere(Sphere(Vector(15, 15, 15), sphere_radius / 1.5, Vector(0.9, 0.5, 0.2), false, true, 1.3));
+    //scene.addSphere(Sphere(Vector(-15, 15, -15), sphere_radius / 1.5, Vector(0.5, 0.9, 0.2)));// , true));
+    //scene.addSphere(Sphere(Vector(15, 15, 15), sphere_radius / 1.5, Vector(0.9, 0.5, 0.2)));// , false, true, 1.3));
+    scene.addSphere(Sphere(Vector(-15, 15, -15), sphere_radius / 1.5, Vector(0.5, 0.9, 0.2), true));
+    scene.addSphere(Sphere(Vector(15, 15, 15), sphere_radius / 1.5, Vector(0.9, 0.5, 0.2), false, true, 1.3));
 
-    scene.addSphere(Sphere(Vector(0, 0, 56), 0 / 1.5, Vector(0.9, 0.5, 0.2), false, true, 1.3));
+    //scene.addSphere(Sphere(Vector(0, 0, 56), 0 / 1.5, Vector(0.9, 0.5, 0.2), false, true, 1.3));
 
-    //scene.addSphere(Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.8, 0.4, 0.6)));
-    //scene.addSphere(Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.2, 0.3, 0.8)));
-    //scene.addSphere(Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.6, 0.8, 0.7)));
-    //scene.addSphere(Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.4, 0.8, 0.5)));
-    //scene.addSphere(Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(0.4, 0.4, 0.9)));
-    //scene.addSphere(Sphere(Vector(0, 0, big_radius), big_radius - offset_to_wall - sphere_radius, Vector(0.9, 0.8, 0.5)));
-    scene.addSphere(Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(55.0 / 255.0, 215.0 / 255.0, 0.0 / 255.0)));
+    scene.addSphere(Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.8, 0.4, 0.6)));
+    scene.addSphere(Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.2, 0.3, 0.8)));
+    scene.addSphere(Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.6, 0.8, 0.7)));
+    scene.addSphere(Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.4, 0.8, 0.5)));
+    scene.addSphere(Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(0.4, 0.4, 0.9)));
+    scene.addSphere(Sphere(Vector(0, 0, big_radius), big_radius - offset_to_wall - sphere_radius, Vector(0.9, 0.8, 0.5)));
+    /*scene.addSphere(Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(55.0 / 255.0, 215.0 / 255.0, 0.0 / 255.0)));
     scene.addSphere(Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(238.0 / 255.0, 29.0 / 255.0, 35.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.0 / 255.0, 44.0 / 255.0, 89.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(56.0 / 255.0, 224.0 / 255.0, 116.0 / 255.0)));
-    scene.addSphere(Sphere(Vector(0, 0, big_radius), big_radius - offset_to_wall - sphere_radius, Vector(255 / 255.0, 255 / 255.0, 0 / 255.0)));
+    scene.addSphere(Sphere(Vector(0, 0, big_radius), big_radius - offset_to_wall - sphere_radius, Vector(255 / 255.0, 255 / 255.0, 0 / 255.0)));*/
 
     std::vector<unsigned char> image(W*H * 3, 0);
 
