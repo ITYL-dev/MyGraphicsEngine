@@ -16,7 +16,7 @@
 #define GAMMA 2.2
 #define EPSILON 1e-6
 #define DEFAULT_MAX_RECURSION_DEPTH 4
-#define NB_RAY 64
+#define NB_RAY 1024
 #define DEFAULT_STD_ANTIALIASING 0.6
 
 #ifdef _OPENMP
@@ -382,7 +382,8 @@ int main() {
     int W{ WIDTH };
     int H{ HEIGHT };
     double alpha{ 60 * M_PI / 180 };
-    // double focus{ 55 };
+    double focus_distance{ 55 };
+    double aperture_max_size{ 2 };
 
     int sphere_radius{ 10 };
     int offset_to_wall{ 50 };
@@ -400,6 +401,7 @@ int main() {
     scene.addSphere(Sphere(Vector(15, 15, 15), sphere_radius / 1.5, Vector(0.9, 0.5, 0.2)));// , false, true, 1.3));
     //scene.addSphere(Sphere(Vector(-15, 15, -15), sphere_radius / 1.5, Vector(0.5, 0.9, 0.2), true));
     //scene.addSphere(Sphere(Vector(15, 15, 15), sphere_radius / 1.5, Vector(0.9, 0.5, 0.2), false, true, 1.3));
+
     scene.addSphere(Sphere(Vector(0, 0, 56), 0 / 1.5, Vector(0.9, 0.5, 0.2), false, true, 1.3));
 
     //scene.addSphere(Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.8, 0.4, 0.6)));
@@ -412,7 +414,7 @@ int main() {
     scene.addSphere(Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(238.0 / 255.0, 29.0 / 255.0, 35.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.0 / 255.0, 44.0 / 255.0, 89.0 / 255.0)));
-    scene.addSphere(Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(26.0 / 255.0, 174.0 / 255.0, 76.0 / 255.0)));
+    scene.addSphere(Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(56.0 / 255.0, 224.0 / 255.0, 116.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, 0, big_radius), big_radius - offset_to_wall - sphere_radius, Vector(255 / 255.0, 255 / 255.0, 0 / 255.0)));
 
     std::vector<unsigned char> image(W*H * 3, 0);
@@ -441,7 +443,22 @@ int main() {
                 boxMuller(dx, dy);
                 Vector direction((j + 0.5 + dx) - (W / 2), (H / 2) - (i + 0.5 + dy), -W / (2 * tan(alpha / 2)));
                 direction.normalize();
-                Ray ray(origin_camera, direction);
+
+                #ifdef _OPENMP
+                    int thread_id{ omp_get_thread_num() };
+                #else
+                    int thread_id{ 0 };
+                #endif
+
+                double dx_aperture{ aperture_max_size * (uniform(engines[thread_id]) - 0.5) };
+                double dy_aperture{ aperture_max_size * (uniform(engines[thread_id]) - 0.5) };
+                
+                Vector destination{origin_camera + focus_distance * direction};
+                Vector new_origin_camera{origin_camera + Vector(dx_aperture, dy_aperture, 0)};
+                Vector new_direction{destination - new_origin_camera};
+                new_direction.normalize();
+
+                Ray ray(new_origin_camera, new_direction);
 
                 color += (scene.getColor(ray) / NB_RAY);
             }
