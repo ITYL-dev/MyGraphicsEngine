@@ -15,8 +15,8 @@
 #define MAX_LIGHT_INTENSITY 2e10
 #define GAMMA 2.2
 #define EPSILON 1e-6
-#define DEFAULT_MAX_RECURSION_DEPTH 8
-#define NB_RAY 1024
+#define DEFAULT_MAX_RECURSION_DEPTH 4
+#define NB_RAY 64
 #define DEFAULT_STD_ANTIALIASING 0.6
 
 #ifdef _OPENMP
@@ -144,7 +144,6 @@ static Vector random_cos(const Vector& N) {
     T.normalize();
 
     Vector T2{ cross(T, N) };
-    T2.normalize(); // devrait être normalisé, mais pour être sûr
 
     return x * T + y * T2 + z * N;
 }
@@ -164,11 +163,10 @@ public:
         const Vector& center,
         double radius,
         const Vector& albedo = Vector(1,1,1),
-        bool is_diffuse = true,
         bool isMirror = false,
         bool isTransparent = false,
         double refraction_index = 1.0) :
-        center(center), radius(radius), albedo(albedo), is_diffuse(is_diffuse), isMirror(isMirror), isTransparent(isTransparent), refraction_index(refraction_index) { };
+        center(center), radius(radius), albedo(albedo), isMirror(isMirror), isTransparent(isTransparent), refraction_index(refraction_index) { };
 
     bool intersect(const Ray& ray, Vector& intersection_point, Vector& intersection_normal, double& t) {
         double a{ 1 };
@@ -201,7 +199,6 @@ public:
     Vector center;
     Vector albedo;
     double radius;
-    bool is_diffuse;
     bool isMirror;
     bool isTransparent;
     double refraction_index;
@@ -317,59 +314,58 @@ public:
 
             if (intersected_sphere.isMirror || total_reflection) {
 
-                Vector reflection_direction = ray.direction - 2 * dot_prod * intersection_normal;
+                Vector reflection_direction{ ray.direction - 2 * dot_prod * intersection_normal };
                 Ray mirror_ray(intersection_point_eps, reflection_direction);
 
                 return getColor(mirror_ray, nb_rebound - 1);
             }
 
-            if (intersected_sphere.is_diffuse) {
+            // Cas d'un objet diffus (par défaut) : 
 
-                Vector color_direct(0, 0, 0);
+            Vector color_direct(0, 0, 0);
 
-                for (int l{ 0 }; l < light_sources.size(); l++) {
+            for (int l{ 0 }; l < light_sources.size(); l++) {
 
-                    // Lancer de rayon pour déterminer si le point d'intersection est à l'ombre de la source de lumière ou non
-                    double light_visibility{ 1 };
-                    int first_shadow_intersection_index{ 0 };
-                    Vector shadow_direction{ light_sources[l].position - intersection_point_eps };
-                    shadow_direction.normalize();
-                    Ray shadow_ray(intersection_point_eps, shadow_direction);
-                    Vector shadow_intersection_point, shadow_intersection_normal;
+                // Lancer de rayon pour déterminer si le point d'intersection est à l'ombre de la source de lumière ou non
+                double light_visibility{ 1 };
+                int first_shadow_intersection_index{ 0 };
+                Vector shadow_direction{ light_sources[l].position - intersection_point_eps };
+                shadow_direction.normalize();
+                Ray shadow_ray(intersection_point_eps, shadow_direction);
+                Vector shadow_intersection_point, shadow_intersection_normal;
 
-                    // Reset des variables réutilisables pour le 2ème lancer de rayon :
-                    smallest_t = std::numeric_limits<double>::max();
-                    t = std::numeric_limits<double>::max();
-                    intersected_once = false;
+                // Reset des variables réutilisables pour le 2ème lancer de rayon :
+                smallest_t = std::numeric_limits<double>::max();
+                t = std::numeric_limits<double>::max();
+                intersected_once = false;
 
-                    for (int i{ 0 }; i < objects.size(); i++) {
+                for (int i{ 0 }; i < objects.size(); i++) {
 
-                        bool shadow_ray_intersected{ objects[i].intersect(shadow_ray, shadow_intersection_point, shadow_intersection_normal, t) };
+                    bool shadow_ray_intersected{ objects[i].intersect(shadow_ray, shadow_intersection_point, shadow_intersection_normal, t) };
 
-                        if (t < smallest_t) {
-                            smallest_t = t;
-                            first_shadow_intersection_index = i;
-                        }
-
-                        if (shadow_ray_intersected) intersected_once = true;
+                    if (t < smallest_t) {
+                        smallest_t = t;
+                        first_shadow_intersection_index = i;
                     }
 
-                    if (intersected_once && smallest_t <= sqrt((light_sources[l].position - intersection_point_eps).norm2())) light_visibility = 0; // si intersection avant la source de lumière, pas de visibilité sur celle-ci
-
-                    Vector normalized_dist{ light_sources[l].position - intersection_point_eps };
-                    normalized_dist.normalize();
-
-                    double common_factor = light_visibility * dot(intersection_normal, normalized_dist) / (4 * sqr(M_PI) * (light_sources[l].position - intersection_point_eps).norm2());
-                    color_direct += common_factor * light_sources[l].intensity * intersected_sphere.albedo;
+                    if (shadow_ray_intersected) intersected_once = true;
                 }
 
-                Vector color_indirect(0, 0, 0);
-                Vector random_direction{ random_cos(intersection_normal) };
-                Ray random_ray(intersection_point_eps, random_direction);
+                if (intersected_once && smallest_t <= sqrt((light_sources[l].position - intersection_point_eps).norm2())) light_visibility = 0; // si intersection avant la source de lumière, pas de visibilité sur celle-ci
 
-                color_indirect = intersected_sphere.albedo * getColor(random_ray, nb_rebound - 1);
-                return color_direct + color_indirect;
+                Vector normalized_dist{ light_sources[l].position - intersection_point_eps };
+                normalized_dist.normalize();
+
+                double common_factor = light_visibility * dot(intersection_normal, normalized_dist) / (4 * sqr(M_PI) * (light_sources[l].position - intersection_point_eps).norm2());
+                color_direct += common_factor * light_sources[l].intensity * intersected_sphere.albedo;
             }
+
+            Vector color_indirect(0, 0, 0);
+            Vector random_direction{ random_cos(intersection_normal) };
+            Ray random_ray(intersection_point_eps, random_direction);
+
+            color_indirect = intersected_sphere.albedo * getColor(random_ray, nb_rebound - 1);
+            return color_direct + color_indirect;
         }
 
         else return Vector(0, 0, 0); // couleur par défaut si pas d'intersection ciel ("sky") noir
@@ -386,6 +382,7 @@ int main() {
     int W{ WIDTH };
     int H{ HEIGHT };
     double alpha{ 60 * M_PI / 180 };
+    // double focus{ 55 };
 
     int sphere_radius{ 10 };
     int offset_to_wall{ 50 };
@@ -393,11 +390,18 @@ int main() {
 
     Vector origin_camera(0, 0, 55);
     Scene scene;
+
     scene.addLight(LightSource(Vector(-10, 20, 40)));
-    // scene.addLight(LightSource(Vector(30, 20, 40), Vector(0.5, 0, 0)));
+    //scene.addLight(LightSource(Vector(30, 20, 40), Vector(0.5, 0, 0)));
+
     scene.addSphere(Sphere(Vector(0, 0, 0), sphere_radius, Vector(0.5, 0.2, 0.9)));
-    scene.addSphere(Sphere(Vector(-15, 15, 0), sphere_radius/1.5, Vector(1, 1, 1), false, true));
-    scene.addSphere(Sphere(Vector(15, 15, 0), sphere_radius / 1.5, Vector(1, 1, 1), false, false, true, 1.3));
+
+    scene.addSphere(Sphere(Vector(-15, 15, -15), sphere_radius / 1.5, Vector(0.5, 0.9, 0.2)));// , true));
+    scene.addSphere(Sphere(Vector(15, 15, 15), sphere_radius / 1.5, Vector(0.9, 0.5, 0.2)));// , false, true, 1.3));
+    //scene.addSphere(Sphere(Vector(-15, 15, -15), sphere_radius / 1.5, Vector(0.5, 0.9, 0.2), true));
+    //scene.addSphere(Sphere(Vector(15, 15, 15), sphere_radius / 1.5, Vector(0.9, 0.5, 0.2), false, true, 1.3));
+    scene.addSphere(Sphere(Vector(0, 0, 56), 0 / 1.5, Vector(0.9, 0.5, 0.2), false, true, 1.3));
+
     //scene.addSphere(Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.8, 0.4, 0.6)));
     //scene.addSphere(Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.2, 0.3, 0.8)));
     //scene.addSphere(Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.6, 0.8, 0.7)));
@@ -408,9 +412,8 @@ int main() {
     scene.addSphere(Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(238.0 / 255.0, 29.0 / 255.0, 35.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.0 / 255.0, 44.0 / 255.0, 89.0 / 255.0)));
-    scene.addSphere(Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(13.0 / 255.0, 87.0 / 255.0, 38.0 / 255.0)));
+    scene.addSphere(Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(26.0 / 255.0, 174.0 / 255.0, 76.0 / 255.0)));
     scene.addSphere(Sphere(Vector(0, 0, big_radius), big_radius - offset_to_wall - sphere_radius, Vector(255 / 255.0, 255 / 255.0, 0 / 255.0)));
-
 
     std::vector<unsigned char> image(W*H * 3, 0);
 
@@ -433,8 +436,6 @@ int main() {
             Vector color(0, 0, 0);
 
             for (int k{ 0 }; k < NB_RAY; k++) {
-
-                // engines[omp_get_thread_num()].seed(k); // decommentez ça pour des résultats rigolos
 
                 double dx, dy;
                 boxMuller(dx, dy);
