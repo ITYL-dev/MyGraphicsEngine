@@ -12,14 +12,14 @@
 #include <algorithm>
 #include <string>
 
-#define WIDTH 128
-#define HEIGHT 128
+#define WIDTH 512
+#define HEIGHT 512
 #define M_PI 3.14159265358
 #define MAX_LIGHT_INTENSITY 1e10
 #define GAMMA 2.2
 #define EPSILON 1e-6
-#define DEFAULT_MAX_RECURSION_DEPTH 2
-#define NB_RAY 64
+#define DEFAULT_MAX_RECURSION_DEPTH 4
+#define NB_RAY 128
 #define DEFAULT_STD_ANTIALIASING 0.6
 
 #ifdef _OPENMP
@@ -212,6 +212,7 @@ public:
         double max_of_min = std::max(xmin, std::max(ymin, zmin));
         double min_of_max = std::min(xmax, std::min(ymax, zmax));
 
+        // if (max_of_min)
         if (min_of_max < 0) return false;
 
         return (min_of_max > max_of_min);
@@ -221,6 +222,15 @@ public:
     Vector M;
 };
 
+class BVH {
+public:
+
+    BVH* leftChild;
+    BVH* rightChild;
+    BoundingBox bbox;
+    int start, end;
+};
+
 class TriangleMesh : public Geometry {
 public:
     ~TriangleMesh() {}
@@ -228,46 +238,64 @@ public:
 
     bool intersect(const Ray& ray, Vector& intersection_point, Vector& intersection_normal, double& smallest_t) const {
 
-        if (!bbox.intersect(ray)) return false;
-
         bool hasIntersected{ false };
         smallest_t = std::numeric_limits<double>::max();
 
-        for (int i{ 0 }; i < indices.size(); i++) {
+        if (!bbox.intersect(ray)) return false;
 
-            Vector A{ vertices[indices[i].vtxi] };
-            Vector B{ vertices[indices[i].vtxj] };
-            Vector C{ vertices[indices[i].vtxk] };
+        std::vector<const BVH*> listBVH;
+        listBVH.push_back(&root);
+        while (!listBVH.empty()) {
+            const BVH* current = listBVH.back();
+            listBVH.pop_back();
+            if (current->leftChild) {
+                if (current->leftChild->bbox.intersect(ray)) {
+                    listBVH.push_back(current->leftChild);
+                }
+                if (current->rightChild->bbox.intersect(ray)) {
+                    listBVH.push_back(current->rightChild);
+                }
+            }
+            else {
 
-            Vector e1{ B - A };
-            Vector e2{ C - A };
+                for (int i{ current->start }; i < current->end; i++) {
 
-            Vector N{ cross(e1, e2) };
-            double inv_dot_prod{ 1 / dot(ray.direction, N) };
-            Vector cross_prod{ cross(ray.origin - A, ray.direction) };
+                    Vector A{ vertices[indices[i].vtxi] };
+                    Vector B{ vertices[indices[i].vtxj] };
+                    Vector C{ vertices[indices[i].vtxk] };
 
-            double beta{ -dot(e2, cross_prod) * inv_dot_prod };
-            double gamma{ dot(e1, cross_prod) * inv_dot_prod };
-            double alpha{ 1 - beta - gamma };
+                    Vector e1{ B - A };
+                    Vector e2{ C - A };
+
+                    Vector N{ cross(e1, e2) };
+                    double inv_dot_prod{ 1 / dot(ray.direction, N) };
+                    Vector cross_prod{ cross(ray.origin - A, ray.direction) };
+
+                    double beta{ -dot(e2, cross_prod) * inv_dot_prod };
+                    double gamma{ dot(e1, cross_prod) * inv_dot_prod };
+                    double alpha{ 1 - beta - gamma };
 
 
-            if (alpha < 0) continue;
-            if (beta > 1) continue;
-            if (beta < 0) continue;
-            if (gamma > 1) continue;
-            if (gamma < 0) continue;
+                    if (alpha < 0) continue;
+                    if (beta > 1) continue;
+                    if (beta < 0) continue;
+                    if (gamma > 1) continue;
+                    if (gamma < 0) continue;
 
-            double t{ -dot(ray.origin - A, N) * inv_dot_prod };
+                    double t{ -dot(ray.origin - A, N) * inv_dot_prod };
 
-            hasIntersected = true;
+                    hasIntersected = true;
 
-            if (t > smallest_t) continue;
+                    if (t > smallest_t) continue;
 
-            smallest_t = t;
-            intersection_normal = N;
-            intersection_normal.normalize();
-            intersection_point = ray.origin + ray.direction * smallest_t;
+                    smallest_t = t;
+                    intersection_normal = N;
+                    intersection_normal.normalize();
+                    intersection_point = ray.origin + ray.direction * smallest_t;
 
+                }
+
+            }
         }
 
         return hasIntersected;
@@ -463,34 +491,63 @@ public:
         }
     }
 
-    void compute_bbox() {
+    BoundingBox compute_bbox(int start_triangle, int end_triangle) {
 
         Vector M(std::numeric_limits<double>::min(), std::numeric_limits<double>::min(), std::numeric_limits<double>::min());
         Vector m(std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max());
 
-        for (int i{ 0 }; i < vertices.size(); i++) {
-            if (vertices[i][0] < m[0]) {
-                m[0] = vertices[i][0];
-            }
-            if (vertices[i][1] < m[1]) {
-                m[1] = vertices[i][1];
-            }
-            if (vertices[i][2] < m[2]) {
-                m[2] = vertices[i][2];
-            }
-            if (vertices[i][0] > M[0]) {
-                M[0] = vertices[i][0];
-            }
-            if (vertices[i][1] > M[1]) {
-                M[1] = vertices[i][1];
-            }
-            if (vertices[i][2] > M[2]) {
-                M[2] = vertices[i][2];
+        for (int triangle_idx{ start_triangle }; triangle_idx < end_triangle; triangle_idx++) {
+
+            int vtx_indices[3]{ indices[triangle_idx].vtxi, indices[triangle_idx].vtxj, indices[triangle_idx].vtxk };
+
+            for (int local_vtx_idx{ 0 }; local_vtx_idx < 3; local_vtx_idx++) {
+
+                int vtx_idx{ vtx_indices[local_vtx_idx] };
+
+                if (vertices[vtx_idx][0] < m[0]) m[0] = vertices[vtx_idx][0]; // min selon x
+                if (vertices[vtx_idx][1] < m[1]) m[1] = vertices[vtx_idx][1]; // min selon y
+                if (vertices[vtx_idx][2] < m[2]) m[2] = vertices[vtx_idx][2]; // min selon z
+                if (vertices[vtx_idx][0] > M[0]) M[0] = vertices[vtx_idx][0]; // max selon x
+                if (vertices[vtx_idx][1] > M[1]) M[1] = vertices[vtx_idx][1]; // max selon y
+                if (vertices[vtx_idx][2] > M[2]) M[2] = vertices[vtx_idx][2]; // max selon z
+
             }
         }
 
-        bbox.m = m;
-        bbox.M = M;
+        return BoundingBox(m, M);
+    }
+
+    void build_BVH(BVH* bvh, int start, int end) {
+
+        bvh->start = start;
+        bvh->end = end;
+        bvh->bbox = compute_bbox(start, end);
+        bvh->leftChild = NULL;
+        bvh->rightChild = NULL;
+
+        Vector diag{ bvh->bbox.M - bvh->bbox.m };
+        int axis{ 2 };
+        if (diag[0] >= diag[1] && diag[0] >= diag[2]) axis = 0;
+        if (diag[1] >= diag[0] && diag[1] >= diag[2]) axis = 1;
+        double middle{ (bvh->bbox.M[axis] + bvh->bbox.m[axis]) / 2 };
+
+        int pivot{ start };
+        for (int i{ start }; i < end; i++) {
+            double baryTriangleAxis{ (vertices[indices[i].vtxi][axis] + vertices[indices[i].vtxj][axis] + vertices[indices[i].vtxk][axis]) / 3 };
+            if (baryTriangleAxis < middle) {
+                std::swap(indices[i], indices[pivot]);
+                pivot++;
+            }
+        }
+
+        if (end - start <= 4) return;
+        if (pivot - start == 0) return;
+        if (end - pivot == 0) return;
+
+        bvh->leftChild = new BVH;
+        bvh->rightChild = new BVH;
+        build_BVH(bvh->leftChild, start, pivot);
+        build_BVH(bvh->rightChild, pivot, end);
     }
 
     std::vector<TriangleIndices> indices;
@@ -500,6 +557,7 @@ public:
     std::vector<Vector> vertexcolors;
 
     BoundingBox bbox;
+    BVH root;
 };
 
 class Sphere: public Geometry {
@@ -608,7 +666,6 @@ public:
                 return MAX_LIGHT_INTENSITY * intersected_object->albedo / (4 * sqr(M_PI) * sqr(light_sphere->radius));
             }
                 
-
             intersected_object->intersect(ray, intersection_point, intersection_normal, t);
 
             bool total_reflection{ false };
@@ -808,7 +865,8 @@ int main() {
     TriangleMesh * mesh_ptr = &mesh;
     scene.addMesh(mesh_ptr);
     mesh.transform(0.6, Vector(0, -10, 0));
-    mesh.compute_bbox();
+    mesh.bbox = mesh.compute_bbox(0, mesh.indices.size());
+    mesh.build_BVH(&mesh.root, 0, mesh.indices.size());
     
     //scene.addSphere(new Sphere(Vector(-5, 0, 0), sphere_radius, Vector(0.5, 0.2, 0.9)));
     //scene.addSphere(Sphere(Vector(-10, 0, -10), sphere_radius, Vector(0.5, 0.9, 0.2)));
@@ -841,7 +899,7 @@ int main() {
     std::cout << "OpenMP is not used. Parallelism is disabled" << std::endl;
 #endif
 
-#pragma omp parallel for num_threads(num_cores)
+#pragma omp parallel for num_threads(num_cores) schedule(dynamic, 1)
     for (int i{ 0 }; i < H; i++) {
         for (int j{ 0 }; j < W; j++) {
             
