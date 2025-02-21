@@ -19,7 +19,7 @@
 #define GAMMA 2.2
 #define EPSILON 1e-6
 #define DEFAULT_MAX_RECURSION_DEPTH 4
-#define NB_RAY 128
+#define NB_RAY 1024
 #define DEFAULT_STD_ANTIALIASING 0.6
 
 #ifdef _OPENMP
@@ -212,7 +212,6 @@ public:
         double max_of_min = std::max(xmin, std::max(ymin, zmin));
         double min_of_max = std::min(xmax, std::min(ymax, zmax));
 
-        // if (max_of_min)
         if (min_of_max < 0) return false;
 
         return (min_of_max > max_of_min);
@@ -245,10 +244,14 @@ public:
 
         std::vector<const BVH*> listBVH;
         listBVH.push_back(&root);
+
         while (!listBVH.empty()) {
+
             const BVH* current = listBVH.back();
             listBVH.pop_back();
+
             if (current->leftChild) {
+
                 if (current->leftChild->bbox.intersect(ray)) {
                     listBVH.push_back(current->leftChild);
                 }
@@ -275,7 +278,6 @@ public:
                     double gamma{ dot(e1, cross_prod) * inv_dot_prod };
                     double alpha{ 1 - beta - gamma };
 
-
                     if (alpha < 0) continue;
                     if (beta > 1) continue;
                     if (beta < 0) continue;
@@ -283,18 +285,19 @@ public:
                     if (gamma < 0) continue;
 
                     double t{ -dot(ray.origin - A, N) * inv_dot_prod };
+                    
+                    if (t < 0) continue;
 
                     hasIntersected = true;
 
-                    if (t > smallest_t) continue;
+                    if (t > smallest_t) continue;                    
 
                     smallest_t = t;
-                    intersection_normal = N;
+                    // intersection_normal = N;
+                    intersection_normal = (alpha * normals[indices[i].ni] + beta * normals[indices[i].nj] + gamma * normals[indices[i].nk]) / 3;
                     intersection_normal.normalize();
                     intersection_point = ray.origin + ray.direction * smallest_t;
-
                 }
-
             }
         }
 
@@ -858,7 +861,8 @@ int main() {
     Vector origin_camera(0, 0, focus_distance);
     Scene scene;
 
-    scene.addSphere(new Sphere(Vector(15, 35, -35), 7.5, Vector(1, 1, 1)));
+    //scene.addSphere(new Sphere(Vector(15, 35, -35), 7.5, Vector(1, 1, 1)));
+    scene.addSphere(new Sphere(Vector(0, 35, 0), 10, Vector(1, 1, 1)));
 
     TriangleMesh mesh;
     mesh.readOBJ("cat.obj");
