@@ -180,7 +180,7 @@ public:
         isTransparent(isTransparent),
         refraction_index(refraction_index) {}
 
-    virtual bool intersect(const Ray& ray, Vector& intersection_point, Vector& intersection_normal, double& t) const = 0;
+    virtual bool intersect(const Ray& ray, Vector& intersection_point, Vector& intersection_normal, double& t, Vector& albedo) const = 0;
 
     Vector albedo;
     bool isMirror;
@@ -234,76 +234,6 @@ class TriangleMesh : public Geometry {
 public:
     ~TriangleMesh() {}
     TriangleMesh() {};
-
-    bool intersect(const Ray& ray, Vector& intersection_point, Vector& intersection_normal, double& smallest_t) const {
-
-        bool hasIntersected{ false };
-        smallest_t = std::numeric_limits<double>::max();
-
-        if (!bbox.intersect(ray)) return false;
-
-        std::vector<const BVH*> listBVH;
-        listBVH.push_back(&root);
-
-        while (!listBVH.empty()) {
-
-            const BVH* current = listBVH.back();
-            listBVH.pop_back();
-
-            if (current->leftChild) {
-
-                if (current->leftChild->bbox.intersect(ray)) {
-                    listBVH.push_back(current->leftChild);
-                }
-                if (current->rightChild->bbox.intersect(ray)) {
-                    listBVH.push_back(current->rightChild);
-                }
-            }
-            else {
-
-                for (int i{ current->start }; i < current->end; i++) {
-
-                    Vector A{ vertices[indices[i].vtxi] };
-                    Vector B{ vertices[indices[i].vtxj] };
-                    Vector C{ vertices[indices[i].vtxk] };
-
-                    Vector e1{ B - A };
-                    Vector e2{ C - A };
-
-                    Vector N{ cross(e1, e2) };
-                    double inv_dot_prod{ 1 / dot(ray.direction, N) };
-                    Vector cross_prod{ cross(ray.origin - A, ray.direction) };
-
-                    double beta{ -dot(e2, cross_prod) * inv_dot_prod };
-                    double gamma{ dot(e1, cross_prod) * inv_dot_prod };
-                    double alpha{ 1 - beta - gamma };
-
-                    if (alpha < 0) continue;
-                    if (beta > 1) continue;
-                    if (beta < 0) continue;
-                    if (gamma > 1) continue;
-                    if (gamma < 0) continue;
-
-                    double t{ -dot(ray.origin - A, N) * inv_dot_prod };
-                    
-                    if (t < 0) continue;
-
-                    hasIntersected = true;
-
-                    if (t > smallest_t) continue;                    
-
-                    smallest_t = t;
-                    // intersection_normal = N;
-                    intersection_normal = (alpha * normals[indices[i].ni] + beta * normals[indices[i].nj] + gamma * normals[indices[i].nk]) / 3;
-                    intersection_normal.normalize();
-                    intersection_point = ray.origin + ray.direction * smallest_t;
-                }
-            }
-        }
-
-        return hasIntersected;
-
-    }
 
     void readOBJ(const char* obj) {
 
@@ -484,7 +414,6 @@ public:
 
         }
         fclose(f);
-
     }
 
     void transform(double scale, const Vector& translate) {
@@ -493,6 +422,92 @@ public:
             vertices[i] = vertices[i] + translate;
         }
     }
+
+    bool intersect(const Ray& ray, Vector& intersection_point, Vector& intersection_normal, double& smallest_t, Vector& albedo) const {
+
+        bool hasIntersected{ false };
+        smallest_t = std::numeric_limits<double>::max();
+
+        if (!bbox.intersect(ray)) return false;
+
+        std::vector<const BVH*> listBVH;
+        listBVH.push_back(&root);
+
+        while (!listBVH.empty()) {
+
+            const BVH* current = listBVH.back();
+            listBVH.pop_back();
+
+            if (current->leftChild) {
+
+                if (current->leftChild->bbox.intersect(ray)) {
+                    listBVH.push_back(current->leftChild);
+                }
+                if (current->rightChild->bbox.intersect(ray)) {
+                    listBVH.push_back(current->rightChild);
+                }
+            }
+            else {
+
+                for (int i{ current->start }; i < current->end; i++) {
+
+                    Vector A{ vertices[indices[i].vtxi] };
+                    Vector B{ vertices[indices[i].vtxj] };
+                    Vector C{ vertices[indices[i].vtxk] };
+
+                    Vector e1{ B - A };
+                    Vector e2{ C - A };
+
+                    Vector N{ cross(e1, e2) };
+                    double inv_dot_prod{ 1 / dot(ray.direction, N) };
+                    Vector cross_prod{ cross(ray.origin - A, ray.direction) };
+
+                    double beta{ -dot(e2, cross_prod) * inv_dot_prod };
+                    double gamma{ dot(e1, cross_prod) * inv_dot_prod };
+                    double alpha{ 1 - beta - gamma };
+
+                    if (alpha < 0) continue;
+                    if (beta > 1) continue;
+                    if (beta < 0) continue;
+                    if (gamma > 1) continue;
+                    if (gamma < 0) continue;
+
+                    double t{ -dot(ray.origin - A, N) * inv_dot_prod };
+
+                    if (t < 0) continue;
+
+                    hasIntersected = true;
+
+                    if (t > smallest_t) continue;
+
+                    smallest_t = t;
+                    // intersection_normal = N;
+                    intersection_normal = (alpha * normals[indices[i].ni] + beta * normals[indices[i].nj] + gamma * normals[indices[i].nk]) / 3;
+                    intersection_normal.normalize();
+                    intersection_point = ray.origin + ray.direction * smallest_t;
+
+                    if (textures.size() != 0) {
+                        Vector uv{ alpha * uvs[indices[i].uvi] + beta * uvs[indices[i].uvj] + gamma * uvs[indices[i].uvk] };
+                        int w{ texW[indices[i].group] };
+                        int h{ texH[indices[i].group] };
+                        int uvx = fmod(uv[0] + 10000, 1.) * w;
+                        int uvy = (1 - fmod(uv[1] + 10000, 1.)) * h;
+                        
+                        albedo[0] = textures[indices[i].group][(uvy * w + uvx) * 3 + 0];
+                        albedo[1] = textures[indices[i].group][(uvy * w + uvx) * 3 + 1];
+                        albedo[2] = textures[indices[i].group][(uvy * w + uvx) * 3 + 2];
+                    }
+                    else {
+                        albedo = Vector(1, 1, 1); // white default color
+                    }
+                }
+            }
+        }
+
+        return hasIntersected;
+
+    }
+
 
     BoundingBox compute_bbox(int start_triangle, int end_triangle) {
 
@@ -513,7 +528,6 @@ public:
                 if (vertices[vtx_idx][0] > M[0]) M[0] = vertices[vtx_idx][0]; // max selon x
                 if (vertices[vtx_idx][1] > M[1]) M[1] = vertices[vtx_idx][1]; // max selon y
                 if (vertices[vtx_idx][2] > M[2]) M[2] = vertices[vtx_idx][2]; // max selon z
-
             }
         }
 
@@ -553,6 +567,19 @@ public:
         build_BVH(bvh->rightChild, pivot, end);
     }
 
+    void add_texture(const char* filename) {
+
+        int w, h, c;
+        unsigned char* tex = stbi_load(filename, &w, &h, &c, 3);
+        texW.push_back(w);
+        texH.push_back(h);
+        std::vector<double> texture(w * h * 3);
+        for (int i{ 0 }; i < w * h * 3; i++) {
+            texture[i] = pow(tex[i]/255.0, GAMMA);
+        }
+        textures.push_back(texture);
+    }
+
     std::vector<TriangleIndices> indices;
     std::vector<Vector> vertices;
     std::vector<Vector> normals;
@@ -561,6 +588,9 @@ public:
 
     BoundingBox bbox;
     BVH root;
+
+    std::vector<std::vector<double>> textures;
+    std::vector<int> texW, texH;
 };
 
 class Sphere: public Geometry {
@@ -574,7 +604,10 @@ public:
         double refraction_index = 1.0) :
         center(center), radius(radius), Geometry(albedo, isMirror, isTransparent, refraction_index) {};
 
-    bool intersect(const Ray& ray, Vector& intersection_point, Vector& intersection_normal, double& t) const {
+    bool intersect(const Ray& ray, Vector& intersection_point, Vector& intersection_normal, double& t, Vector& albedo) const {
+        
+        albedo = this->albedo;
+
         double a{ 1 };
         double b = 2 * dot(ray.direction, ray.origin - center);
         double c = (ray.origin - center).norm2() - sqr(radius);
@@ -642,10 +675,11 @@ public:
         double t{ std::numeric_limits<double>::max() };
         bool intersected_once{ false };
         Vector intersection_point, intersection_normal;
+        Vector object_color;
 
         for (int i{ 0 }; i < objects.size(); i++) {
 
-            bool intersected{ objects[i]->intersect(ray, intersection_point, intersection_normal, t) };
+            bool intersected{ objects[i]->intersect(ray, intersection_point, intersection_normal, t, object_color) };
 
             if (t < smallest_t) {
                 smallest_t = t;
@@ -669,7 +703,7 @@ public:
                 return MAX_LIGHT_INTENSITY * intersected_object->albedo / (4 * sqr(M_PI) * sqr(light_sphere->radius));
             }
                 
-            intersected_object->intersect(ray, intersection_point, intersection_normal, t);
+            intersected_object->intersect(ray, intersection_point, intersection_normal, t, object_color);
 
             bool total_reflection{ false };
             double dot_prod{ dot(ray.direction, intersection_normal) };
@@ -810,7 +844,8 @@ public:
 
             for (int i{ 0 }; i < objects.size(); i++) {
 
-                bool shadow_ray_intersected{ objects[i]->intersect(shadow_ray, shadow_intersection_point, shadow_intersection_normal, t) };
+                Vector dummy;
+                bool shadow_ray_intersected{ objects[i]->intersect(shadow_ray, shadow_intersection_point, shadow_intersection_normal, t, dummy) };
 
                 if (t < smallest_t) {
                     smallest_t = t;
@@ -823,7 +858,7 @@ public:
             if (intersected_once && smallest_t <= shadow_dist) light_visibility = 0; // si intersection avant la source de lumière, pas de visibilité sur celle-ci
 
             Vector light_intensity{ MAX_LIGHT_INTENSITY * light_sphere->albedo }; // to mimic colored light
-            color_direct = intersected_object->albedo * light_intensity / (4 * sqr(M_PI));
+            color_direct = object_color * light_intensity / (4 * sqr(M_PI));
             color_direct = color_direct * dot(shadow_direction, intersection_normal) / dot(-1 * intersection_point_to_light_center, light_normal);
             color_direct = color_direct * dot(-1 * shadow_direction, light_normal) * light_visibility / sqr(shadow_dist);
 
@@ -833,7 +868,7 @@ public:
             Vector random_direction{ random_cos(intersection_normal) };
             Ray random_ray(intersection_point_eps, random_direction);
 
-            color_indirect = intersected_object->albedo * getColor(random_ray, nb_rebound - 1, true);
+            color_indirect = object_color * getColor(random_ray, nb_rebound - 1, true);
 
             return color_direct + color_indirect;
         }
@@ -861,7 +896,7 @@ int main() {
     Vector origin_camera(0, 0, focus_distance);
     Scene scene;
 
-    scene.addSphere(new Sphere(Vector(15, 35, -35), 7.5, Vector(1, 1, 1)));
+    scene.addSphere(new Sphere(Vector(10, 35, 10), 7.5, Vector(1, 1, 1)));
     //scene.addSphere(new Sphere(Vector(0, 35, 0), 10, Vector(1, 1, 1)));
 
     TriangleMesh mesh;
@@ -871,6 +906,8 @@ int main() {
     mesh.transform(0.6, Vector(0, -10, 0));
     mesh.bbox = mesh.compute_bbox(0, mesh.indices.size());
     mesh.build_BVH(&mesh.root, 0, mesh.indices.size());
+
+    mesh.add_texture("cat_diff.png");
     
     //scene.addSphere(new Sphere(Vector(-5, 0, 0), sphere_radius, Vector(0.5, 0.2, 0.9)));
     //scene.addSphere(Sphere(Vector(-10, 0, -10), sphere_radius, Vector(0.5, 0.9, 0.2)));
