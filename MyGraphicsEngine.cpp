@@ -12,14 +12,14 @@
 #include <algorithm>
 #include <string>
 
-#define WIDTH 1024
-#define HEIGHT 1024
+#define WIDTH 512
+#define HEIGHT 512
 #define M_PI 3.14159265358
 #define MAX_LIGHT_INTENSITY 1e10
 #define GAMMA 2.2
 #define EPSILON 1e-6
 #define DEFAULT_MAX_RECURSION_DEPTH 4
-#define NB_RAY 256
+#define NB_RAY 64
 #define DEFAULT_STD_ANTIALIASING 0.5
 
 #ifdef _OPENMP
@@ -484,7 +484,7 @@ public:
                     // intersection_normal = N;
                     intersection_normal = (alpha * normals[indices[i].ni] + beta * normals[indices[i].nj] + gamma * normals[indices[i].nk]) / 3;
                     intersection_normal.normalize();
-                    intersection_point = ray.origin + ray.direction * smallest_t;
+                    intersection_point = (ray.origin + EPSILON * intersection_normal) + ray.direction * smallest_t;
 
                     if (textures.size() != 0) {
                         Vector uv{ alpha * uvs[indices[i].uvi] + beta * uvs[indices[i].uvj] + gamma * uvs[indices[i].uvk] };
@@ -605,8 +605,6 @@ public:
         center(center), radius(radius), Geometry(albedo, isMirror, isTransparent, refraction_index) {};
 
     bool intersect(const Ray& ray, Vector& intersection_point, Vector& intersection_normal, double& t, Vector& albedo) const {
-        
-        albedo = this->albedo;
 
         double a{ 1 };
         double b = 2 * dot(ray.direction, ray.origin - center);
@@ -631,6 +629,15 @@ public:
         intersection_point = ray.origin + t * ray.direction; // point d'intersection
         intersection_normal = intersection_point - center; // vecteur normal à la sphère en intersection_point
         intersection_normal.normalize();
+
+        albedo = this->albedo;
+        
+        int frequency{ 5 };
+        int alb0{ (int)(fmod(abs(intersection_point[0]), 2 * frequency) < frequency) },
+            alb1{ (int)(fmod(abs(intersection_point[1]), 2 * frequency) < frequency) },
+            alb2{ (int)(fmod(abs(intersection_point[2]), 2 * frequency) < frequency) };
+
+        albedo = 0.5 * Vector(1, 1, 1) + albedo * (((alb0 + alb1 + alb2) % 2) - 0.5);
 
         return true;
     }
@@ -886,18 +893,22 @@ int main() {
     int W{ WIDTH };
     int H{ HEIGHT };
     double alpha{ 60 * M_PI / 180 };
-    double focus_distance{ 55 };
+    double focus_distance{ 45 };
     double aperture_radius{ 0.1 };
+
+    double angleUp = -30 * M_PI / 180;
+    Vector cameraUp(0, cos(angleUp), sin(angleUp)), cameraDir(0, -sin(angleUp), cos(angleUp));
+    Vector cameraRight{ cross(cameraUp, cameraDir) };
 
     int sphere_radius{ 10 };
     int offset_to_wall{ 50 };
     int big_radius{ 100000 };
 
-    Vector origin_camera(0, 0, focus_distance);
+    Vector origin_camera(0, 25, focus_distance);
     Scene scene;
 
-    scene.addSphere(new Sphere(Vector(10, 35, 10), 7.5, Vector(1, 1, 1)));
-    //scene.addSphere(new Sphere(Vector(0, 35, 0), 10, Vector(1, 1, 1)));
+    scene.addSphere(new Sphere(Vector(10, 35, 10), 5, Vector(1, 1, 1)));
+    // scene.addSphere(new Sphere(Vector(0, 35, 0), 5, Vector(1, 1, 1)));
 
     TriangleMesh mesh;
     mesh.readOBJ("cat.obj");
@@ -977,6 +988,8 @@ int main() {
                 Vector new_origin_camera{origin_camera + Vector(dx_aperture, dy_aperture, 0)};
                 Vector new_direction{destination - new_origin_camera};
                 new_direction.normalize();
+
+                new_direction = new_direction[0] * cameraRight + new_direction[1] * cameraUp + new_direction[2] * cameraDir;
 
                 Ray ray(new_origin_camera, new_direction);
 
