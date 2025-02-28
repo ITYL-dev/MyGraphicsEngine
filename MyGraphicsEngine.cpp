@@ -12,15 +12,15 @@
 #include <algorithm>
 #include <string>
 
-#define WIDTH 512
-#define HEIGHT 512
+#define WIDTH 1024
+#define HEIGHT 1024
 #define M_PI 3.14159265358
 #define MAX_LIGHT_INTENSITY 1e10
 #define GAMMA 2.2
 #define EPSILON 1e-6
 #define DEFAULT_MAX_RECURSION_DEPTH 4
-#define NB_RAY 1024
-#define DEFAULT_STD_ANTIALIASING 0.6
+#define NB_RAY 256
+#define DEFAULT_STD_ANTIALIASING 0.5
 
 #ifdef _OPENMP
     #include <omp.h>
@@ -852,7 +852,7 @@ int main() {
     int H{ HEIGHT };
     double alpha{ 60 * M_PI / 180 };
     double focus_distance{ 55 };
-    double aperture_radius{ 1.5 };
+    double aperture_radius{ 0.1 };
 
     int sphere_radius{ 10 };
     int offset_to_wall{ 50 };
@@ -861,8 +861,8 @@ int main() {
     Vector origin_camera(0, 0, focus_distance);
     Scene scene;
 
-    //scene.addSphere(new Sphere(Vector(15, 35, -35), 7.5, Vector(1, 1, 1)));
-    scene.addSphere(new Sphere(Vector(0, 35, 0), 10, Vector(1, 1, 1)));
+    scene.addSphere(new Sphere(Vector(15, 35, -35), 7.5, Vector(1, 1, 1)));
+    //scene.addSphere(new Sphere(Vector(0, 35, 0), 10, Vector(1, 1, 1)));
 
     TriangleMesh mesh;
     mesh.readOBJ("cat.obj");
