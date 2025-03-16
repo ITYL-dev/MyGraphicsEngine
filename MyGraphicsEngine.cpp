@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <algorithm>
 #include <string>
+#include <chrono>
 
 #define WIDTH 512
 #define HEIGHT 512
@@ -194,6 +195,10 @@ public:
     BoundingBox(const Vector& m = Vector(0, 0, 0), const Vector& M = Vector(0, 0, 0)): m(m), M(M) {}
 
     bool intersect(const Ray& ray) const {
+
+        // cette fonction a directement été copiée au tableau pendant que vous la codiez
+        // (comme j'espère l'avoir montré dans le partiel, je l'ai comprise depuis)
+
         double P1x = (m[0] - ray.origin[0]) / ray.direction[0];
         double P2x = (M[0] - ray.origin[0]) / ray.direction[0];
         double xmin = std::min(P1x, P2x);
@@ -629,15 +634,19 @@ public:
         intersection_point = ray.origin + t * ray.direction; // point d'intersection
         intersection_normal = intersection_point - center; // vecteur normal à la sphère en intersection_point
         intersection_normal.normalize();
-
-        albedo = this->albedo;
         
-        int frequency{ 5 };
-        int alb0{ (int)(fmod(abs(intersection_point[0]), 2 * frequency) < frequency) },
-            alb1{ (int)(fmod(abs(intersection_point[1]), 2 * frequency) < frequency) },
-            alb2{ (int)(fmod(abs(intersection_point[2]), 2 * frequency) < frequency) };
+        albedo = this->albedo;
 
-        albedo = 0.5 * Vector(1, 1, 1) + albedo * (((alb0 + alb1 + alb2) % 2) - 0.5);
+        // Damier sur les sphères:
+        /*
+        int large_offset{ 100000 }; // pour enlever les rangées de carreaux "doubles" en aux niveaux des axes, idée de Gulliver Larsonneur
+        int frequency{ 5 };
+        int alb0{ (int)(fmod(abs(intersection_point[0]) + large_offset, 2 * frequency) < frequency) },
+            alb1{ (int)(fmod(abs(intersection_point[1]) + large_offset, 2 * frequency) < frequency) },
+            alb2{ (int)(fmod(abs(intersection_point[2]) + large_offset, 2 * frequency) < frequency) };
+
+        albedo = albedo * ((alb0 + alb1 + alb2) % 2);
+        */
 
         return true;
     }
@@ -785,45 +794,6 @@ public:
 
             Vector color_direct(0, 0, 0);
 
-            /*
-
-            for (int l{ 0 }; l < light_sources.size(); l++) {
-
-                // Lancer de rayon pour déterminer si le point d'intersection est à l'ombre de la source de lumière ou non
-                double light_visibility{ 1 };
-                int first_shadow_intersection_index{ 0 };
-                Vector shadow_direction{ light_sources[l].position - intersection_point_eps };
-                shadow_direction.normalize();
-                Ray shadow_ray(intersection_point_eps, shadow_direction);
-                Vector shadow_intersection_point, shadow_intersection_normal;
-
-                // Reset des variables réutilisables pour le 2ème lancer de rayon :
-                smallest_t = std::numeric_limits<double>::max();
-                t = std::numeric_limits<double>::max();
-                intersected_once = false;
-
-                for (int i{ 0 }; i < objects.size(); i++) {
-
-                    bool shadow_ray_intersected{ objects[i].intersect(shadow_ray, shadow_intersection_point, shadow_intersection_normal, t) };
-
-                    if (t < smallest_t) {
-                        smallest_t = t;
-                        first_shadow_intersection_index = i;
-                    }
-
-                    if (shadow_ray_intersected) intersected_once = true;
-                }
-
-                if (intersected_once && smallest_t <= sqrt((light_sources[l].position - intersection_point_eps).norm2())) light_visibility = 0; // si intersection avant la source de lumière, pas de visibilité sur celle-ci
-
-                Vector normalized_dist{ light_sources[l].position - intersection_point_eps };
-                normalized_dist.normalize();
-
-                double common_factor = light_visibility * dot(intersection_normal, normalized_dist) / (4 * sqr(M_PI) * (light_sources[l].position - intersection_point_eps).norm2());
-                color_direct += common_factor * light_sources[l].intensity * intersected_object.albedo;
-            }
-            */
-
             // Choix d'une point X considéré comme source de lumière sur la sphère
             const Sphere * light_sphere{ dynamic_cast<const Sphere *>(objects[0]) };
             Vector intersection_point_to_light_center{ light_sphere->center - intersection_point }; // PL
@@ -926,13 +896,6 @@ int main() {
     //scene.addSphere(Sphere(Vector(10, 0, 10), sphere_radius, Vector(0.9, 0.5, 0.2)));
     //scene.addSphere(new Sphere(Vector(10, 0, 15), sphere_radius, Vector(0.9, 0.5, 0.2), false, true, 1.3));
 
-    /*scene.addSphere(Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.8, 0.4, 0.6)));
-    scene.addSphere(Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.2, 0.3, 0.8)));
-    scene.addSphere(Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(0.6, 0.8, 0.7)));
-    scene.addSphere(Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.4, 0.8, 0.5)));
-    scene.addSphere(Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(0.4, 0.4, 0.9)));
-    scene.addSphere(Sphere(Vector(0, 0, big_radius), big_radius - offset_to_wall - sphere_radius, Vector(0.9, 0.8, 0.5)));*/
-
     scene.addSphere(new Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(55.0 / 255.0, 215.0 / 255.0, 0.0 / 255.0)));
     scene.addSphere(new Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0)));
     scene.addSphere(new Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(238.0 / 255.0, 29.0 / 255.0, 35.0 / 255.0)));
@@ -950,6 +913,8 @@ int main() {
 #else
     std::cout << "OpenMP is not used. Parallelism is disabled" << std::endl;
 #endif
+
+std::chrono::high_resolution_clock::time_point start{ std::chrono::high_resolution_clock::now() }; // début du chrono
 
 #pragma omp parallel for num_threads(num_cores) schedule(dynamic, 1)
     for (int i{ 0 }; i < H; i++) {
@@ -1002,6 +967,10 @@ int main() {
         }
     }
 
-    stbi_write_png("image.png", W, H, 3, &image[0], 0);
+    std::chrono::high_resolution_clock::time_point stop{ std::chrono::high_resolution_clock::now() }; // fin du chrono
+    std::chrono::seconds elapsed_time{ std::chrono::duration_cast<std::chrono::seconds>(stop - start) };
+    std::cout << "Time taken: " << elapsed_time.count() << " seconds." << std::endl;
+
+    stbi_write_png("image.png", W, H, 3, &image[0], 0); // on ne chronomètre pas le temps d'écriture en png
     return 0;
 }
