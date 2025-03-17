@@ -4,6 +4,7 @@ MyGraphicsEngine/
 Debug/
 Release/
 .vs/
+enc_temp_folder/
 
 # gitignore C++ Github
 # Prerequisites

@@ -19,8 +19,8 @@
 #define MAX_LIGHT_INTENSITY 1e10
 #define GAMMA 2.2
 #define EPSILON 1e-6
-#define DEFAULT_MAX_RECURSION_DEPTH 4
-#define NB_RAY 64
+#define DEFAULT_MAX_RECURSION_DEPTH 8
+#define NB_RAY 1024
 #define DEFAULT_STD_ANTIALIASING 0.5
 
 #ifdef _OPENMP
@@ -39,7 +39,7 @@ static unsigned char color_correction(double num) {
 
     num = pow(num, 1/GAMMA); // correction gamma
     if (num > 255) return 255; // clamping supérieur
-    else if (num < 0) return 0; // clamping clamping inférieur
+    else if (num < 0) return 0; // clamping inférieur
     else return static_cast<unsigned char>(num); // conversion
 };
 
@@ -196,7 +196,7 @@ public:
 
     bool intersect(const Ray& ray) const {
 
-        // cette fonction a directement été copiée au tableau pendant que vous la codiez
+        // cette fonction a directement été copiée au tableau pendant la séance de code en cours
         // (comme j'espère l'avoir montré dans le partiel, je l'ai comprise depuis)
 
         double P1x = (m[0] - ray.origin[0]) / ray.direction[0];
@@ -486,7 +486,7 @@ public:
                     if (t > smallest_t) continue;
 
                     smallest_t = t;
-                    // intersection_normal = N;
+                    //intersection_normal = N;
                     intersection_normal = (alpha * normals[indices[i].ni] + beta * normals[indices[i].nj] + gamma * normals[indices[i].nk]) / 3;
                     intersection_normal.normalize();
                     intersection_point = (ray.origin + EPSILON * intersection_normal) + ray.direction * smallest_t;
@@ -638,12 +638,13 @@ public:
         albedo = this->albedo;
 
         // Damier sur les sphères:
+        
         /*
         int large_offset{ 100000 }; // pour enlever les rangées de carreaux "doubles" en aux niveaux des axes, idée de Gulliver Larsonneur
         int frequency{ 5 };
-        int alb0{ (int)(fmod(abs(intersection_point[0]) + large_offset, 2 * frequency) < frequency) },
-            alb1{ (int)(fmod(abs(intersection_point[1]) + large_offset, 2 * frequency) < frequency) },
-            alb2{ (int)(fmod(abs(intersection_point[2]) + large_offset, 2 * frequency) < frequency) };
+        int alb0{ (int)(fmod(abs(intersection_point[0] + large_offset), 2 * frequency) < frequency) },
+            alb1{ (int)(fmod(abs(intersection_point[1] + large_offset), 2 * frequency) < frequency) },
+            alb2{ (int)(fmod(abs(intersection_point[2] + large_offset), 2 * frequency) < frequency) };
 
         albedo = albedo * ((alb0 + alb1 + alb2) % 2);
         */
@@ -676,10 +677,6 @@ public:
 
     void addMesh(const TriangleMesh * mesh) {
         objects.push_back(mesh);
-    };
-
-    void addLight(const LightSource& light_source) {
-        light_sources.push_back(light_source);
     };
 
     Vector getColor(const Ray& ray, int nb_rebound = DEFAULT_MAX_RECURSION_DEPTH, bool is_indirect = false) {
@@ -855,7 +852,6 @@ public:
 
     double refraction_index_void{ 1.0 };
     std::vector<const Geometry*> objects;
-    std::vector<LightSource> light_sources;
 };
 
 int main() {
@@ -863,10 +859,10 @@ int main() {
     int W{ WIDTH };
     int H{ HEIGHT };
     double alpha{ 60 * M_PI / 180 };
-    double focus_distance{ 45 };
+    double focus_distance{ 55 }; // 45
     double aperture_radius{ 0.1 };
 
-    double angleUp = -30 * M_PI / 180;
+    double angleUp = 0; // -30 * M_PI / 180;
     Vector cameraUp(0, cos(angleUp), sin(angleUp)), cameraDir(0, -sin(angleUp), cos(angleUp));
     Vector cameraRight{ cross(cameraUp, cameraDir) };
 
@@ -874,12 +870,11 @@ int main() {
     int offset_to_wall{ 50 };
     int big_radius{ 100000 };
 
-    Vector origin_camera(0, 25, focus_distance);
+    Vector origin_camera(0, 0, focus_distance); // 0, 25, ...
     Scene scene;
 
-    scene.addSphere(new Sphere(Vector(10, 35, 10), 5, Vector(1, 1, 1)));
-    // scene.addSphere(new Sphere(Vector(0, 35, 0), 5, Vector(1, 1, 1)));
-
+    scene.addSphere(new Sphere(Vector(15, 40, -35), 5, Vector(1, 1, 1))); // première sphère = la lumière
+    
     TriangleMesh mesh;
     mesh.readOBJ("cat.obj");
     TriangleMesh * mesh_ptr = &mesh;
@@ -890,13 +885,16 @@ int main() {
 
     mesh.add_texture("cat_diff.png");
     
-    //scene.addSphere(new Sphere(Vector(-5, 0, 0), sphere_radius, Vector(0.5, 0.2, 0.9)));
-    //scene.addSphere(Sphere(Vector(-10, 0, -10), sphere_radius, Vector(0.5, 0.9, 0.2)));
+    /*
+    scene.addSphere(new Sphere(Vector(-5, 0, 0), sphere_radius, Vector(0.5, 0.2, 0.9)));
     //scene.addSphere(new Sphere(Vector(-20, 0, -15), sphere_radius, Vector(0.5, 0.9, 0.2), true));
-    //scene.addSphere(Sphere(Vector(10, 0, 10), sphere_radius, Vector(0.9, 0.5, 0.2)));
+    scene.addSphere(new Sphere(Vector(-20, 0, -15), sphere_radius, Vector(0.5, 0.9, 0.2)));
     //scene.addSphere(new Sphere(Vector(10, 0, 15), sphere_radius, Vector(0.9, 0.5, 0.2), false, true, 1.3));
+    scene.addSphere(new Sphere(Vector(10, 0, 15), sphere_radius, Vector(0.9, 0.5, 0.2)));
+    */
 
     scene.addSphere(new Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(55.0 / 255.0, 215.0 / 255.0, 0.0 / 255.0)));
+    //scene.addSphere(new Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0), true));
     scene.addSphere(new Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0)));
     scene.addSphere(new Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(238.0 / 255.0, 29.0 / 255.0, 35.0 / 255.0)));
     scene.addSphere(new Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.0 / 255.0, 44.0 / 255.0, 89.0 / 255.0)));
