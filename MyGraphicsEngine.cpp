@@ -19,8 +19,8 @@
 #define MAX_LIGHT_INTENSITY 1e10
 #define GAMMA 2.2
 #define EPSILON 1e-6
-#define DEFAULT_MAX_RECURSION_DEPTH 4
-#define NB_RAY 16
+#define DEFAULT_MAX_RECURSION_DEPTH 8
+#define NB_RAY 128
 #define DEFAULT_STD_ANTIALIASING 0.5
 
 #ifdef _OPENMP
@@ -196,7 +196,7 @@ public:
 
     bool intersect(const Ray& ray) const {
 
-        // cette fonction a directement été copiée au tableau pendant la séance de code en cours
+        // Cette fonction a directement été copiée au tableau pendant la séance de code en cours
         // (comme j'espère l'avoir montré dans le partiel, je l'ai comprise depuis)
 
         double P1x = (m[0] - ray.origin[0]) / ray.direction[0];
@@ -640,13 +640,13 @@ public:
         // Damier sur les sphères:
         
         /*
-        int large_offset{ 100000 }; // pour enlever les rangées de carreaux "doubles" en aux niveaux des axes, idée de Gulliver Larsonneur
+        int large_offset{ 100000 }; // pour enlever les rangées de carreaux "doubles" en aux niveaux des axes
         int frequency{ 5 };
         int alb0{ (int)(fmod(abs(intersection_point[0] + large_offset), 2 * frequency) < frequency) },
             alb1{ (int)(fmod(abs(intersection_point[1] + large_offset), 2 * frequency) < frequency) },
             alb2{ (int)(fmod(abs(intersection_point[2] + large_offset), 2 * frequency) < frequency) };
 
-        albedo = albedo * ((alb0 + alb1 + alb2) % 2);
+        albedo = albedo * ((alb0 + alb1 + alb2) % 2); // cette formule m'a été donnée par Gulliver Larsonneur
         */
 
         return true;
@@ -856,119 +856,126 @@ public:
 
 int main() {
 
-    int W{ WIDTH };
-    int H{ HEIGHT };
-    double alpha{ 60 * M_PI / 180 };
-    double focus_distance{ 55 }; // 45
-    double aperture_radius{ 0.1 };
+    for (int angle{ 0 }; angle <= 30; angle++) {
 
-    double angleUp = 0; // -30 * M_PI / 180;
-    Vector cameraUp(0, cos(angleUp), sin(angleUp)), cameraDir(0, -sin(angleUp), cos(angleUp));
-    Vector cameraRight{ cross(cameraUp, cameraDir) };
+        int W{ WIDTH };
+        int H{ HEIGHT };
+        double alpha{ 60 * M_PI / 180 };
+        double focus_distance{ 45 };
+        double aperture_radius{ 0.1 };
 
-    int sphere_radius{ 10 };
-    int offset_to_wall{ 50 };
-    int big_radius{ 100000 };
+        double angleUp = -angle * M_PI / 180;
+        Vector cameraUp(0, cos(angleUp), sin(angleUp)), cameraDir(0, -sin(angleUp), cos(angleUp));
+        Vector cameraRight{ cross(cameraUp, cameraDir) };
 
-    Vector origin_camera(0, 0, focus_distance); // 0, 25, ...
-    Scene scene;
+        int sphere_radius{ 10 };
+        int offset_to_wall{ 50 };
+        int big_radius{ 100000 };
 
-    scene.addSphere(new Sphere(Vector(15, 40, -35), 5, Vector(1, 1, 1))); // première sphère = la lumière
-    
-    TriangleMesh mesh;
-    mesh.readOBJ("cat.obj");
-    TriangleMesh * mesh_ptr = &mesh;
-    scene.addMesh(mesh_ptr);
-    mesh.transform(0.6, Vector(0, -10, 0));
-    mesh.bbox = mesh.compute_bbox(0, mesh.indices.size());
-    mesh.build_BVH(&mesh.root, 0, mesh.indices.size());
+        Vector origin_camera(0, 25, focus_distance);
+        Scene scene;
 
-    mesh.add_texture("cat_diff.png");
-    
-    /*
-    scene.addSphere(new Sphere(Vector(-5, 0, 0), sphere_radius, Vector(0.5, 0.2, 0.9)));
-    //scene.addSphere(new Sphere(Vector(-20, 0, -15), sphere_radius, Vector(0.5, 0.9, 0.2), true));
-    scene.addSphere(new Sphere(Vector(-20, 0, -15), sphere_radius, Vector(0.5, 0.9, 0.2)));
-    //scene.addSphere(new Sphere(Vector(10, 0, 15), sphere_radius, Vector(0.9, 0.5, 0.2), false, true, 1.3));
-    scene.addSphere(new Sphere(Vector(10, 0, 15), sphere_radius, Vector(0.9, 0.5, 0.2)));
-    */
+        scene.addSphere(new Sphere(Vector(15, 40, -35), 5, Vector(1, 1, 1))); // première sphère = la lumière
 
-    scene.addSphere(new Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(55.0 / 255.0, 215.0 / 255.0, 0.0 / 255.0)));
-    //scene.addSphere(new Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0), true));
-    scene.addSphere(new Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0)));
-    scene.addSphere(new Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(238.0 / 255.0, 29.0 / 255.0, 35.0 / 255.0)));
-    scene.addSphere(new Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.0 / 255.0, 44.0 / 255.0, 89.0 / 255.0)));
-    scene.addSphere(new Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(56.0 / 255.0, 224.0 / 255.0, 116.0 / 255.0)));
-    scene.addSphere(new Sphere(Vector(0, 0, big_radius), big_radius - offset_to_wall - sphere_radius, Vector(255 / 255.0, 255 / 255.0, 0 / 255.0)));
+        TriangleMesh mesh;
+        mesh.readOBJ("cat.obj");
+        TriangleMesh* mesh_ptr = &mesh;
+        scene.addMesh(mesh_ptr);
+        mesh.transform(0.6, Vector(0, -10, 0));
+        mesh.bbox = mesh.compute_bbox(0, mesh.indices.size());
+        mesh.build_BVH(&mesh.root, 0, mesh.indices.size());
 
-    std::vector<unsigned char> image(W*H * 3, 0);
+        mesh.add_texture("cat_diff.png");
 
-    int counter{ 0 };
+        /*
+        scene.addSphere(new Sphere(Vector(-5, 0, 0), sphere_radius, Vector(0.5, 0.2, 0.9)));
+        //scene.addSphere(new Sphere(Vector(-20, 0, -15), sphere_radius, Vector(0.5, 0.9, 0.2), true));
+        scene.addSphere(new Sphere(Vector(-20, 0, -15), sphere_radius, Vector(0.5, 0.9, 0.2)));
+        //scene.addSphere(new Sphere(Vector(10, 0, 15), sphere_radius, Vector(0.9, 0.5, 0.2), false, true, 1.3));
+        scene.addSphere(new Sphere(Vector(10, 0, 15), sphere_radius, Vector(0.9, 0.5, 0.2)));
+        */
 
-#ifdef _OPENMP
-    for (int k{ 0 }; k < num_cores; k++) engines[k].seed(k);
-    std::cout << "OpenMP is used. Parallelism on " << num_cores << " threads" << std::endl;
-#else
-    std::cout << "OpenMP is not used. Parallelism is disabled" << std::endl;
-#endif
+        scene.addSphere(new Sphere(Vector(big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(55.0 / 255.0, 215.0 / 255.0, 0.0 / 255.0)));
+        //scene.addSphere(new Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0), true));
+        scene.addSphere(new Sphere(Vector(-big_radius, 0, 0), big_radius - offset_to_wall - sphere_radius, Vector(255.0 / 255.0, 140.0 / 255.0, 0.0 / 255.0)));
+        scene.addSphere(new Sphere(Vector(0, big_radius, 0), big_radius - offset_to_wall - sphere_radius, Vector(238.0 / 255.0, 29.0 / 255.0, 35.0 / 255.0)));
+        scene.addSphere(new Sphere(Vector(0, -big_radius, 0), big_radius - sphere_radius, Vector(0.0 / 255.0, 44.0 / 255.0, 89.0 / 255.0)));
+        scene.addSphere(new Sphere(Vector(0, 0, -big_radius), big_radius - offset_to_wall - sphere_radius, Vector(56.0 / 255.0, 224.0 / 255.0, 116.0 / 255.0)));
+        scene.addSphere(new Sphere(Vector(0, 0, big_radius), big_radius - offset_to_wall - sphere_radius, Vector(255 / 255.0, 255 / 255.0, 0 / 255.0)));
 
-std::chrono::high_resolution_clock::time_point start{ std::chrono::high_resolution_clock::now() }; // début du chrono
+        std::vector<unsigned char> image(W * H * 3, 0);
 
-#pragma omp parallel for num_threads(num_cores) schedule(dynamic, 1)
-    for (int i{ 0 }; i < H; i++) {
-        for (int j{ 0 }; j < W; j++) {
-            
-            counter += 1;
-            if ((counter % (W * H / 10)) == 0) std::cout << 1 + (100 * counter) / (W * H) << "%" << std::endl;
+        int counter{ 0 };
 
-            Vector color(0, 0, 0);
+        #ifdef _OPENMP
+        for (int k{ 0 }; k < num_cores; k++) engines[k].seed(k);
+        std::cout << "OpenMP is used. Parallelism on " << num_cores << " threads" << std::endl;
+        #else
+        std::cout << "OpenMP is not used. Parallelism is disabled" << std::endl;
+        #endif
 
-            #ifdef _OPENMP
-                int thread_id{ omp_get_thread_num() };
-            #else
-                int thread_id{ 0 };
-            #endif
+        std::chrono::high_resolution_clock::time_point start{ std::chrono::high_resolution_clock::now() }; // début du chrono
 
-            for (int k{ 0 }; k < NB_RAY; k++) {
+        #pragma omp parallel for num_threads(num_cores) schedule(dynamic, 1)
+        for (int i{ 0 }; i < H; i++) {
+            for (int j{ 0 }; j < W; j++) {
 
-                double dx, dy;
-                boxMuller(dx, dy);
-                Vector direction((j + 0.5 + dx) - (W / 2), (H / 2) - (i + 0.5 + dy), -W / (2 * tan(alpha / 2)));
-                direction.normalize();
+                counter += 1;
+                if ((counter % (W * H / 10)) == 0) std::cout << 1 + (100 * counter) / (W * H) << "%" << std::endl;
+
+                Vector color(0, 0, 0);
 
                 #ifdef _OPENMP
-                    int thread_id{ omp_get_thread_num() };
+                int thread_id{ omp_get_thread_num() };
                 #else
-                    int thread_id{ 0 };
+                int thread_id{ 0 };
                 #endif
 
-                double dr_aperture{ aperture_radius * uniform(engines[thread_id]) };
-                double dtheta_aperture{ 2 * M_PI * uniform(engines[thread_id]) };
-                double dx_aperture{ dr_aperture * cos(dtheta_aperture) };
-                double dy_aperture{ dr_aperture * sin(dtheta_aperture) };
-                
-                Vector destination{origin_camera + focus_distance * direction};
-                Vector new_origin_camera{origin_camera + Vector(dx_aperture, dy_aperture, 0)};
-                Vector new_direction{destination - new_origin_camera};
-                new_direction.normalize();
+                for (int k{ 0 }; k < NB_RAY; k++) {
 
-                new_direction = new_direction[0] * cameraRight + new_direction[1] * cameraUp + new_direction[2] * cameraDir;
+                    double dx, dy;
+                    boxMuller(dx, dy);
+                    Vector direction((j + 0.5 + dx) - (W / 2), (H / 2) - (i + 0.5 + dy), -W / (2 * tan(alpha / 2)));
+                    direction.normalize();
 
-                Ray ray(new_origin_camera, new_direction);
+                    #ifdef _OPENMP
+                    int thread_id{ omp_get_thread_num() };
+                    #else
+                    int thread_id{ 0 };
+                    #endif
 
-                color += (scene.getColor(ray) / NB_RAY);
+                    double dr_aperture{ aperture_radius * uniform(engines[thread_id]) };
+                    double dtheta_aperture{ 2 * M_PI * uniform(engines[thread_id]) };
+                    double dx_aperture{ dr_aperture * cos(dtheta_aperture) };
+                    double dy_aperture{ dr_aperture * sin(dtheta_aperture) };
+
+                    Vector destination{ origin_camera + focus_distance * direction };
+                    Vector new_origin_camera{ origin_camera + Vector(dx_aperture, dy_aperture, 0) };
+                    Vector new_direction{ destination - new_origin_camera };
+                    new_direction.normalize();
+
+                    new_direction = new_direction[0] * cameraRight + new_direction[1] * cameraUp + new_direction[2] * cameraDir;
+
+                    Ray ray(new_origin_camera, new_direction);
+
+                    color += (scene.getColor(ray) / NB_RAY);
+                }
+
+                image[(i * W + j) * 3 + 0] = color_correction(color[0]); // RED
+                image[(i * W + j) * 3 + 1] = color_correction(color[1]); // GREEN
+                image[(i * W + j) * 3 + 2] = color_correction(color[2]); // BLUE
             }
-
-            image[(i*W + j) * 3 + 0] = color_correction(color[0]); // RED
-            image[(i*W + j) * 3 + 1] = color_correction(color[1]); // GREEN
-            image[(i*W + j) * 3 + 2] = color_correction(color[2]); // BLUE
         }
+
+        std::chrono::high_resolution_clock::time_point stop{ std::chrono::high_resolution_clock::now() }; // fin du chrono
+        std::chrono::seconds elapsed_time{ std::chrono::duration_cast<std::chrono::seconds>(stop - start) };
+        std::cout << "Time taken: " << elapsed_time.count() << " seconds." << std::endl;
+
+        std::string filename{ ".png" };
+        filename = std::to_string(angle) + filename;
+
+        stbi_write_png(filename.c_str(), W, H, 3, &image[0], 0); // on ne chronomètre pas le temps d'écriture en png
+
     }
-
-    std::chrono::high_resolution_clock::time_point stop{ std::chrono::high_resolution_clock::now() }; // fin du chrono
-    std::chrono::seconds elapsed_time{ std::chrono::duration_cast<std::chrono::seconds>(stop - start) };
-    std::cout << "Time taken: " << elapsed_time.count() << " seconds." << std::endl;
-
-    stbi_write_png("image.png", W, H, 3, &image[0], 0); // on ne chronomètre pas le temps d'écriture en png
     return 0;
 }
